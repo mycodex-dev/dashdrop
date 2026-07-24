@@ -50,7 +50,9 @@ Data is stored in `./data` by default when running locally.
 |--------|------|-------------|
 | `POST` | `/api/upload` | Upload HTML + thumbnail (`multipart: html`, `thumb`) |
 | `GET` | `/api/dashboards` | List all dashboards |
+| `PUT` | `/api/dashboards/{slug}` | Replace dashboard with a new HTML version |
 | `DELETE` | `/api/dashboards/{slug}` | Delete a dashboard |
+| `GET` | `/api/dashboards/{slug}/download` | Download the HTML file |
 | `GET` | `/d/{slug}` | Serve published HTML |
 | `GET` | `/api/dashboards/{slug}/thumb.png` | Dashboard thumbnail |
 

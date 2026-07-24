@@ -413,8 +413,11 @@ main {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
-  transition: all 0.2s;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  min-height: min-content;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
 .dashboard-card:hover {
@@ -428,6 +431,8 @@ main {
   background: var(--bg-card);
   overflow: hidden;
   position: relative;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  flex-shrink: 0;
 }
 
 .card-thumb img {
@@ -469,6 +474,11 @@ main {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.card-actions .btn {
+  flex: 1 1 calc(50% - 0.25rem);
+  min-width: 0;
 }
 
 /* Empty state */

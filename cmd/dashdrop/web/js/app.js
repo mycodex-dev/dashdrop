@@ -22,6 +22,9 @@ function formatBytes(bytes) {
 
 function timeAgo(dateStr) {
   const date = new Date(dateStr);
+  if (!Number.isFinite(date.getTime()) || date.getFullYear() < 1970) {
+    return "";
+  }
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
@@ -34,6 +37,20 @@ function timeAgo(dateStr) {
   if (months < 12) return months + " month" + (months === 1 ? "" : "s") + " ago";
   const years = Math.floor(months / 12);
   return years + " year" + (years === 1 ? "" : "s") + " ago";
+}
+
+function isValidTimestamp(dateStr) {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  return Number.isFinite(date.getTime()) && date.getFullYear() >= 1970;
+}
+
+function dashboardDateLabel(d) {
+  if (isValidTimestamp(d.updated_at) && d.updated_at !== d.created_at) {
+    const label = timeAgo(d.updated_at);
+    return label ? "Updated " + label : timeAgo(d.created_at);
+  }
+  return timeAgo(d.created_at);
 }
 
 function showToast(message, type = "success") {
@@ -214,6 +231,25 @@ async function uploadDashboard(htmlFile, onProgress) {
   return data;
 }
 
+async function replaceDashboard(slug, htmlFile, onProgress) {
+  const html = await htmlFile.text();
+
+  onProgress?.("Generating preview...");
+  const thumbBlob = await generateThumbnail(html, htmlFile.name);
+
+  onProgress?.("Uploading new version...");
+  const form = new FormData();
+  form.append("html", new Blob([html], { type: "text/html" }), htmlFile.name);
+  form.append("thumb", thumbBlob, "thumb.png");
+
+  const res = await fetch("/api/dashboards/" + slug, { method: "PUT", body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to upload new version");
+  }
+  return data;
+}
+
 async function fetchDashboards() {
   const res = await fetch("/api/dashboards");
   if (!res.ok) throw new Error("Failed to load dashboards");
@@ -318,8 +354,13 @@ function initLibraryPage() {
   const emptyState = document.getElementById("empty-state");
   const loading = document.getElementById("loading");
   const countEl = document.getElementById("dashboard-count");
+  const replaceInput = document.getElementById("replace-input");
 
   if (!grid) return;
+
+  loadConfig();
+
+  let replaceSlug = null;
 
   async function render() {
     try {
@@ -342,12 +383,17 @@ function initLibraryPage() {
       for (const d of dashboards) {
         const card = document.createElement("article");
         card.className = "dashboard-card";
+        const fullUrl = window.location.origin + d.url;
+        const dateLabel = dashboardDateLabel(d);
+
         card.innerHTML =
           '<a href="' +
           d.url +
           '" target="_blank" rel="noopener" class="card-thumb">' +
           '<img src="' +
           d.thumb_url +
+          "?t=" +
+          Date.now() +
           '" alt="' +
           escapeHtml(d.title) +
           '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'">' +
@@ -358,25 +404,26 @@ function initLibraryPage() {
           escapeHtml(d.title) +
           "</div>" +
           '<div class="card-meta">' +
-          timeAgo(d.created_at) +
+          dateLabel +
           "</div>" +
           '<div class="card-actions">' +
-          '<a href="' +
-          d.url +
-          '" target="_blank" rel="noopener" class="btn btn-primary btn-sm">Open</a>' +
-          '<button type="button" class="btn btn-secondary btn-sm btn-copy" data-url="">Copy link</button>' +
-          '<button type="button" class="btn btn-danger btn-sm btn-delete" data-slug="' +
+          '<button type="button" class="btn btn-secondary btn-sm btn-copy">Copy Link</button>' +
+          '<button type="button" class="btn btn-secondary btn-sm btn-replace">Upload New Version</button>' +
+          '<a href="/api/dashboards/' +
           d.slug +
-          '">Delete</button>' +
+          '/download" class="btn btn-secondary btn-sm">Download</a>' +
+          '<button type="button" class="btn btn-danger btn-sm btn-delete">Delete</button>' +
           "</div></div>";
 
-        const copyBtn = card.querySelector(".btn-copy");
-        const fullUrl = window.location.origin + d.url;
-        copyBtn.dataset.url = fullUrl;
-        copyBtn.addEventListener("click", () => copyToClipboard(fullUrl));
+        card.querySelector(".btn-copy").addEventListener("click", () => copyToClipboard(fullUrl));
 
-        const deleteBtn = card.querySelector(".btn-delete");
-        deleteBtn.addEventListener("click", async () => {
+        card.querySelector(".btn-replace").addEventListener("click", () => {
+          replaceSlug = d.slug;
+          replaceInput.value = "";
+          replaceInput.click();
+        });
+
+        card.querySelector(".btn-delete").addEventListener("click", async () => {
           if (!confirm('Delete "' + d.title + '"? This cannot be undone.')) return;
           try {
             await deleteDashboard(d.slug);
@@ -393,6 +440,31 @@ function initLibraryPage() {
       loading.textContent = "Failed to load dashboards";
       showToast(e.message, "error");
     }
+  }
+
+  if (replaceInput) {
+    replaceInput.addEventListener("change", async () => {
+      const file = replaceInput.files[0];
+      const slug = replaceSlug;
+      replaceSlug = null;
+      replaceInput.value = "";
+      if (!file || !slug) return;
+
+      const err = validateHtmlFile(file);
+      if (err) {
+        showToast(err, "error");
+        return;
+      }
+
+      try {
+        showToast("Uploading new version...");
+        await replaceDashboard(slug, file);
+        showToast("New version published");
+        render();
+      } catch (e) {
+        showToast(e.message || "Failed to upload new version", "error");
+      }
+    });
   }
 
   render();

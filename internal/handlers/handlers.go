@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -65,45 +66,12 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(h.cfg.MaxUploadBytes + 1024*1024); err != nil {
-		h.writeError(w, http.StatusBadRequest, "request too large or invalid")
-		return
-	}
-
-	htmlFile, htmlHeader, err := r.FormFile("html")
-	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "html file is required")
+	filename, htmlFile, htmlHeader, thumbFile, ok := h.parseUploadForm(w, r)
+	if !ok {
 		return
 	}
 	defer htmlFile.Close()
-
-	thumbFile, _, err := r.FormFile("thumb")
-	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "thumbnail is required")
-		return
-	}
 	defer thumbFile.Close()
-
-	filename := htmlHeader.Filename
-	ext := strings.ToLower(filepath.Ext(filename))
-	if ext != ".html" && ext != ".htm" {
-		h.writeError(w, http.StatusBadRequest, "only .html files are allowed")
-		return
-	}
-
-	if htmlHeader.Size > h.cfg.MaxUploadBytes {
-		h.writeError(w, http.StatusBadRequest, "file exceeds maximum size")
-		return
-	}
-
-	contentType := htmlHeader.Header.Get("Content-Type")
-	if contentType != "" {
-		mediaType, _, _ := mime.ParseMediaType(contentType)
-		if mediaType != "text/html" && mediaType != "application/octet-stream" {
-			h.writeError(w, http.StatusBadRequest, "invalid content type")
-			return
-		}
-	}
 
 	entry, err := h.store.SaveUpload(filename, htmlFile, htmlHeader.Size, thumbFile)
 	if err != nil {
@@ -116,6 +84,95 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		URL:   h.absoluteURL(r, entry.URL),
 		Title: entry.Title,
 	})
+}
+
+func (h *Handler) HandleReplace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	slug := r.PathValue("slug")
+	if slug == "" {
+		h.writeError(w, http.StatusBadRequest, "invalid slug")
+		return
+	}
+
+	filename, htmlFile, htmlHeader, thumbFile, ok := h.parseUploadForm(w, r)
+	if !ok {
+		return
+	}
+	defer htmlFile.Close()
+	defer thumbFile.Close()
+
+	entry, err := h.store.ReplaceUpload(slug, filename, htmlFile, htmlHeader.Size, thumbFile)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			h.writeError(w, http.StatusNotFound, "dashboard not found")
+			return
+		}
+		if errors.Is(err, storage.ErrInvalidSlug) {
+			h.writeError(w, http.StatusBadRequest, "invalid slug")
+			return
+		}
+		h.writeError(w, http.StatusInternalServerError, "failed to replace upload")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, uploadResponse{
+		Slug:  entry.Slug,
+		URL:   h.absoluteURL(r, entry.URL),
+		Title: entry.Title,
+	})
+}
+
+func (h *Handler) parseUploadForm(w http.ResponseWriter, r *http.Request) (string, multipart.File, *multipart.FileHeader, multipart.File, bool) {
+	if err := r.ParseMultipartForm(h.cfg.MaxUploadBytes + 1024*1024); err != nil {
+		h.writeError(w, http.StatusBadRequest, "request too large or invalid")
+		return "", nil, nil, nil, false
+	}
+
+	htmlFile, htmlHeader, err := r.FormFile("html")
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "html file is required")
+		return "", nil, nil, nil, false
+	}
+
+	thumbFile, _, err := r.FormFile("thumb")
+	if err != nil {
+		htmlFile.Close()
+		h.writeError(w, http.StatusBadRequest, "thumbnail is required")
+		return "", nil, nil, nil, false
+	}
+
+	filename := htmlHeader.Filename
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext != ".html" && ext != ".htm" {
+		htmlFile.Close()
+		thumbFile.Close()
+		h.writeError(w, http.StatusBadRequest, "only .html files are allowed")
+		return "", nil, nil, nil, false
+	}
+
+	if htmlHeader.Size > h.cfg.MaxUploadBytes {
+		htmlFile.Close()
+		thumbFile.Close()
+		h.writeError(w, http.StatusBadRequest, "file exceeds maximum size")
+		return "", nil, nil, nil, false
+	}
+
+	contentType := htmlHeader.Header.Get("Content-Type")
+	if contentType != "" {
+		mediaType, _, _ := mime.ParseMediaType(contentType)
+		if mediaType != "text/html" && mediaType != "application/octet-stream" {
+			htmlFile.Close()
+			thumbFile.Close()
+			h.writeError(w, http.StatusBadRequest, "invalid content type")
+			return "", nil, nil, nil, false
+		}
+	}
+
+	return filename, htmlFile, htmlHeader, thumbFile, true
 }
 
 func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
@@ -141,8 +198,8 @@ func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slug := strings.TrimPrefix(r.URL.Path, "/api/dashboards/")
-	if slug == "" || strings.Contains(slug, "/") {
+	slug := r.PathValue("slug")
+	if slug == "" {
 		h.writeError(w, http.StatusBadRequest, "invalid slug")
 		return
 	}
@@ -163,20 +220,70 @@ func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) HandleDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	slug := r.PathValue("slug")
+	if slug == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	htmlPath, err := h.store.HTMLPath(slug)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "invalid slug", http.StatusBadRequest)
+		return
+	}
+
+	filename := slug + ".html"
+	if meta, err := h.store.GetMeta(slug); err == nil {
+		if meta.OriginalFilename != "" {
+			filename = filepath.Base(meta.OriginalFilename)
+		} else if meta.Title != "" {
+			filename = meta.Title + ".html"
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeDownloadName(filename)+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, htmlPath)
+}
+
+func sanitizeDownloadName(name string) string {
+	name = filepath.Base(name)
+	name = strings.ReplaceAll(name, `"`, "")
+	name = strings.ReplaceAll(name, "\n", "")
+	name = strings.ReplaceAll(name, "\r", "")
+	if name == "" || name == "." || name == ".." {
+		return "dashboard.html"
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".html") && !strings.HasSuffix(strings.ToLower(name), ".htm") {
+		name += ".html"
+	}
+	return name
+}
+
 func (h *Handler) HandleThumb(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	path := strings.TrimPrefix(r.URL.Path, "/api/dashboards/")
-	path = strings.TrimSuffix(path, "/thumb.png")
-	if path == "" || strings.Contains(path, "/") {
+	slug := r.PathValue("slug")
+	if slug == "" {
 		http.NotFound(w, r)
 		return
 	}
 
-	thumbPath, err := h.store.ThumbPath(path)
+	thumbPath, err := h.store.ThumbPath(slug)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			http.NotFound(w, r)
@@ -187,7 +294,7 @@ func (h *Handler) HandleThumb(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "image/png")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	http.ServeFile(w, r, thumbPath)
 }
 

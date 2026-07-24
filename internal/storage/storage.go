@@ -24,6 +24,7 @@ type DashboardMeta struct {
 	Slug             string    `json:"slug"`
 	Title            string    `json:"title"`
 	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 	OriginalFilename string    `json:"original_filename"`
 	SizeBytes        int64     `json:"size_bytes"`
 }
@@ -32,8 +33,33 @@ type DashboardEntry struct {
 	Slug      string    `json:"slug"`
 	Title     string    `json:"title"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	ThumbURL  string    `json:"thumb_url"`
 	URL       string    `json:"url"`
+}
+
+// MarshalJSON omits zero updated_at values (time.Time omitempty is unreliable).
+func (e DashboardEntry) MarshalJSON() ([]byte, error) {
+	type entryJSON struct {
+		Slug      string     `json:"slug"`
+		Title     string     `json:"title"`
+		CreatedAt time.Time  `json:"created_at"`
+		UpdatedAt *time.Time `json:"updated_at,omitempty"`
+		ThumbURL  string     `json:"thumb_url"`
+		URL       string     `json:"url"`
+	}
+	out := entryJSON{
+		Slug:      e.Slug,
+		Title:     e.Title,
+		CreatedAt: e.CreatedAt,
+		ThumbURL:  e.ThumbURL,
+		URL:       e.URL,
+	}
+	if !e.UpdatedAt.IsZero() {
+		t := e.UpdatedAt
+		out.UpdatedAt = &t
+	}
+	return json.Marshal(out)
 }
 
 type Store struct {
@@ -127,7 +153,14 @@ func (s *Store) readManifest() ([]DashboardEntry, error) {
 
 func (s *Store) writeManifest(entries []DashboardEntry) error {
 	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].CreatedAt.After(entries[j].CreatedAt)
+		ti, tj := entries[i].CreatedAt, entries[j].CreatedAt
+		if !entries[i].UpdatedAt.IsZero() {
+			ti = entries[i].UpdatedAt
+		}
+		if !entries[j].UpdatedAt.IsZero() {
+			tj = entries[j].UpdatedAt
+		}
+		return ti.After(tj)
 	})
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
@@ -173,6 +206,7 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 		Slug:             slug,
 		Title:            titleFromFilename(originalFilename),
 		CreatedAt:        now,
+		UpdatedAt:        now,
 		OriginalFilename: originalFilename,
 		SizeBytes:        htmlSize,
 	}
@@ -190,6 +224,7 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 		Slug:      slug,
 		Title:     meta.Title,
 		CreatedAt: now,
+		UpdatedAt: now,
 		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", slug),
 		URL:       fmt.Sprintf("/d/%s", slug),
 	}
@@ -206,6 +241,109 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 	}
 
 	return entry, nil
+}
+
+func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htmlSize int64, thumb io.Reader) (DashboardEntry, error) {
+	if !ValidSlug(slug) {
+		return DashboardEntry{}, ErrInvalidSlug
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dir := s.dashboardDir(slug)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return DashboardEntry{}, ErrNotFound
+	}
+
+	existing, err := s.readMetaUnlocked(slug)
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+
+	htmlPath := filepath.Join(dir, "index.html")
+	if err := writeStreamAtomic(htmlPath, html, 0o644); err != nil {
+		return DashboardEntry{}, fmt.Errorf("write html: %w", err)
+	}
+
+	thumbPath := filepath.Join(dir, "thumb.png")
+	if err := writeStreamAtomic(thumbPath, thumb, 0o644); err != nil {
+		return DashboardEntry{}, fmt.Errorf("write thumb: %w", err)
+	}
+
+	now := time.Now().UTC()
+	meta := DashboardMeta{
+		Slug:             slug,
+		Title:            titleFromFilename(originalFilename),
+		CreatedAt:        existing.CreatedAt,
+		UpdatedAt:        now,
+		OriginalFilename: originalFilename,
+		SizeBytes:        htmlSize,
+	}
+	if meta.CreatedAt.IsZero() {
+		meta.CreatedAt = now
+	}
+	metaData, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+	if err := writeFileAtomic(filepath.Join(dir, "meta.json"), metaData, 0o644); err != nil {
+		return DashboardEntry{}, err
+	}
+
+	entry := DashboardEntry{
+		Slug:      slug,
+		Title:     meta.Title,
+		CreatedAt: meta.CreatedAt,
+		UpdatedAt: now,
+		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", slug),
+		URL:       fmt.Sprintf("/d/%s", slug),
+	}
+
+	entries, err := s.readManifest()
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+	found := false
+	for i, e := range entries {
+		if e.Slug == slug {
+			entries[i] = entry
+			found = true
+			break
+		}
+	}
+	if !found {
+		entries = append(entries, entry)
+	}
+	if err := s.writeManifest(entries); err != nil {
+		return DashboardEntry{}, err
+	}
+
+	return entry, nil
+}
+
+func (s *Store) GetMeta(slug string) (DashboardMeta, error) {
+	if !ValidSlug(slug) {
+		return DashboardMeta{}, ErrInvalidSlug
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readMetaUnlocked(slug)
+}
+
+func (s *Store) readMetaUnlocked(slug string) (DashboardMeta, error) {
+	data, err := os.ReadFile(filepath.Join(s.dashboardDir(slug), "meta.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DashboardMeta{}, ErrNotFound
+		}
+		return DashboardMeta{}, err
+	}
+	var meta DashboardMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return DashboardMeta{}, err
+	}
+	return meta, nil
 }
 
 func (s *Store) Delete(slug string) error {
