@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Library — Dashdrop</title>
+  <meta name="description" content="Browse all published HTML dashboards.">
+  <link rel="stylesheet" href="/css/style.css?v=3">
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="logo">
+      <span class="logo-icon">⚡</span>
+      Dashdrop
+    </a>
+    <nav>
+      <a href="/" class="nav-link">Upload</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="library-header">
+      <div>
+        <h1>Dashboard Library</h1>
+        <p id="dashboard-count" class="library-count">Loading...</p>
+      </div>
+      <a href="/" class="btn btn-primary">Upload new</a>
+    </div>
+
+    <div id="loading" class="loading">Loading dashboards...</div>
+
+    <div id="empty-state" class="empty-state" style="display: none">
+      <div class="empty-icon">📂</div>
+      <h2>No dashboards yet</h2>
+      <p>Upload your first HTML file to get started.</p>
+      <a href="/" class="btn btn-primary">Upload HTML</a>
+    </div>
+
+    <div id="dashboard-grid" class="dashboard-grid" style="display: none"></div>
+  </main>
+
+  <script src="/js/app.js?v=3"></script>
+</body>
+</html>

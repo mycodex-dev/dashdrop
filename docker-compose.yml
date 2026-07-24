@@ -1,0 +1,12 @@
+services:
+  dashdrop:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - PORT=8080
+      - DATA_DIR=/data
+      - MAX_UPLOAD_BYTES=5242880
+    restart: unless-stopped

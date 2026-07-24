@@ -1,0 +1,10 @@
+/data/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+.env
+.DS_Store
