@@ -325,12 +325,124 @@ main {
 
 .success-panel h2 {
   font-size: 1.35rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 1.25rem;
 }
 
-.success-panel .title {
+.meta-form {
+  text-align: left;
+  max-width: 520px;
+  margin: 0 auto 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--text-muted);
-  margin-bottom: 1.5rem;
+}
+
+.field input[type="text"] {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.field input[type="text"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+}
+
+.slug-input-row {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.slug-input-row:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+}
+
+.slug-prefix {
+  flex-shrink: 0;
+  padding: 0.65rem 0 0.65rem 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.slug-input-row input {
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.field-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  min-height: 1.1em;
+}
+
+.field-hint.ok {
+  color: var(--success);
+}
+
+.field-hint.bad {
+  color: var(--danger);
+}
+
+.meta-form .btn {
+  align-self: flex-start;
+}
+
+.edit-panel {
+  display: none;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.edit-panel.active {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.edit-panel .field input[type="text"] {
+  font-size: 0.85rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.edit-panel .slug-prefix {
+  font-size: 0.72rem;
+  padding: 0.5rem 0 0.5rem 0.65rem;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .url-box {
@@ -477,8 +589,8 @@ main {
 }
 
 .card-actions .btn {
-  flex: 1 1 calc(50% - 0.25rem);
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: calc(50% - 0.25rem);
 }
 
 /* Empty state */

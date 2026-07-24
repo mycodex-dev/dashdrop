@@ -16,9 +16,19 @@ import (
 
 const slugChars = "abcdefghijklmnopqrstuvwxyz0123456789"
 const slugLength = 6
+const minCustomSlugLen = 2
+const maxCustomSlugLen = 48
 
 var ErrNotFound = errors.New("dashboard not found")
 var ErrInvalidSlug = errors.New("invalid slug")
+var ErrSlugTaken = errors.New("slug already taken")
+var ErrInvalidTitle = errors.New("invalid title")
+
+var reservedSlugs = map[string]bool{
+	"api": true, "library": true, "css": true, "js": true, "d": true,
+	"admin": true, "health": true, "static": true, "assets": true,
+	"favicon.ico": true, "robots.txt": true,
+}
 
 type DashboardMeta struct {
 	Slug             string    `json:"slug"`
@@ -91,15 +101,42 @@ func (s *Store) dashboardDir(slug string) string {
 }
 
 func ValidSlug(slug string) bool {
-	if len(slug) != slugLength {
+	n := len(slug)
+	if n < minCustomSlugLen || n > maxCustomSlugLen {
 		return false
 	}
-	for _, c := range slug {
-		if !strings.ContainsRune(slugChars, c) {
+	if reservedSlugs[slug] {
+		return false
+	}
+	if slug[0] == '-' || slug[n-1] == '-' {
+		return false
+	}
+	for i := 0; i < n; i++ {
+		c := slug[i]
+		isAlphaNum := (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+		if !isAlphaNum && c != '-' {
+			return false
+		}
+		if c == '-' && i > 0 && slug[i-1] == '-' {
 			return false
 		}
 	}
 	return true
+}
+
+func NormalizeSlug(slug string) string {
+	return strings.ToLower(strings.TrimSpace(slug))
+}
+
+func NormalizeTitle(title string) (string, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "", ErrInvalidTitle
+	}
+	if len(title) > 120 {
+		title = title[:120]
+	}
+	return title, nil
 }
 
 func generateSlug() (string, error) {
@@ -125,6 +162,124 @@ func (s *Store) uniqueSlug() (string, error) {
 		}
 	}
 	return "", errors.New("failed to generate unique slug")
+}
+
+func (s *Store) SlugAvailable(slug string, exceptSlug string) (bool, error) {
+	slug = NormalizeSlug(slug)
+	if !ValidSlug(slug) {
+		return false, ErrInvalidSlug
+	}
+	if exceptSlug != "" && slug == NormalizeSlug(exceptSlug) {
+		return true, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := os.Stat(s.dashboardDir(slug)); err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Store) UpdateMeta(currentSlug, newSlug, title string) (DashboardEntry, error) {
+	currentSlug = NormalizeSlug(currentSlug)
+	newSlug = NormalizeSlug(newSlug)
+	if !ValidSlug(currentSlug) {
+		return DashboardEntry{}, ErrInvalidSlug
+	}
+
+	title, err := NormalizeTitle(title)
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+	if newSlug == "" {
+		newSlug = currentSlug
+	}
+	if !ValidSlug(newSlug) {
+		return DashboardEntry{}, ErrInvalidSlug
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dir := s.dashboardDir(currentSlug)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return DashboardEntry{}, ErrNotFound
+	}
+
+	if newSlug != currentSlug {
+		if _, err := os.Stat(s.dashboardDir(newSlug)); err == nil {
+			return DashboardEntry{}, ErrSlugTaken
+		} else if !os.IsNotExist(err) {
+			return DashboardEntry{}, err
+		}
+		if err := os.Rename(dir, s.dashboardDir(newSlug)); err != nil {
+			return DashboardEntry{}, fmt.Errorf("rename dashboard: %w", err)
+		}
+		dir = s.dashboardDir(newSlug)
+	}
+
+	existing, err := s.readMetaUnlocked(newSlug)
+	if err != nil {
+		// meta may still be under old path naming if rename failed partially; try current
+		existing, err = s.readMetaUnlocked(currentSlug)
+		if err != nil {
+			return DashboardEntry{}, err
+		}
+	}
+
+	now := time.Now().UTC()
+	meta := DashboardMeta{
+		Slug:             newSlug,
+		Title:            title,
+		CreatedAt:        existing.CreatedAt,
+		UpdatedAt:        now,
+		OriginalFilename: existing.OriginalFilename,
+		SizeBytes:        existing.SizeBytes,
+	}
+	if meta.CreatedAt.IsZero() {
+		meta.CreatedAt = now
+	}
+	metaData, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+	if err := writeFileAtomic(filepath.Join(dir, "meta.json"), metaData, 0o644); err != nil {
+		return DashboardEntry{}, err
+	}
+
+	entry := DashboardEntry{
+		Slug:      newSlug,
+		Title:     title,
+		CreatedAt: meta.CreatedAt,
+		UpdatedAt: now,
+		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", newSlug),
+		URL:       fmt.Sprintf("/d/%s", newSlug),
+	}
+
+	entries, err := s.readManifest()
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+	found := false
+	for i, e := range entries {
+		if e.Slug == currentSlug || e.Slug == newSlug {
+			entries[i] = entry
+			found = true
+			break
+		}
+	}
+	if !found {
+		entries = append(entries, entry)
+	}
+	if err := s.writeManifest(entries); err != nil {
+		return DashboardEntry{}, err
+	}
+
+	return entry, nil
 }
 
 func titleFromFilename(name string) string {

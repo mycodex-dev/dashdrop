@@ -264,6 +264,93 @@ async function deleteDashboard(slug) {
   }
 }
 
+async function checkSlugAvailability(slug, exceptSlug) {
+  const params = exceptSlug ? "?except=" + encodeURIComponent(exceptSlug) : "";
+  const res = await fetch("/api/slugs/" + encodeURIComponent(slug) + params);
+  if (!res.ok) throw new Error("Failed to check slug");
+  return res.json();
+}
+
+async function updateDashboardMeta(currentSlug, { title, slug }) {
+  const res = await fetch("/api/dashboards/" + encodeURIComponent(currentSlug), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, slug }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to update dashboard");
+  }
+  return data;
+}
+
+function normalizeSlugInput(value) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function publicUrlForSlug(slug) {
+  return window.location.origin + "/d/" + slug;
+}
+
+function createSlugChecker({ input, statusEl, exceptSlug, onChange }) {
+  let timer = null;
+  let seq = 0;
+
+  async function run() {
+    const raw = input.value;
+    const slug = normalizeSlugInput(raw);
+    if (slug !== raw) {
+      input.value = slug;
+    }
+
+    const mySeq = ++seq;
+    if (!slug) {
+      statusEl.textContent = "Enter a URL slug";
+      statusEl.className = "field-hint bad";
+      onChange?.({ slug: "", available: false, valid: false });
+      return;
+    }
+
+    statusEl.textContent = "Checking…";
+    statusEl.className = "field-hint";
+
+    try {
+      const except = typeof exceptSlug === "function" ? exceptSlug() : exceptSlug;
+      const result = await checkSlugAvailability(slug, except);
+      if (mySeq !== seq) return;
+      if (!result.valid) {
+        statusEl.textContent = result.error || "Invalid slug";
+        statusEl.className = "field-hint bad";
+      } else if (!result.available) {
+        statusEl.textContent = "Already taken";
+        statusEl.className = "field-hint bad";
+      } else {
+        statusEl.textContent = "Available";
+        statusEl.className = "field-hint ok";
+      }
+      onChange?.(result);
+    } catch (e) {
+      if (mySeq !== seq) return;
+      statusEl.textContent = e.message || "Could not check slug";
+      statusEl.className = "field-hint bad";
+      onChange?.({ slug, available: false, valid: false });
+    }
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(run, 300);
+  }
+
+  input.addEventListener("input", schedule);
+  return { checkNow: run };
+}
+
 /* Upload page init */
 function initUploadPage() {
   const dropzone = document.getElementById("dropzone");
@@ -273,10 +360,24 @@ function initUploadPage() {
   const successPanel = document.getElementById("success");
   const errorMsg = document.getElementById("error");
   const uploadSection = document.getElementById("upload-section");
+  const titleInput = document.getElementById("edit-title");
+  const slugInput = document.getElementById("edit-slug");
+  const slugStatus = document.getElementById("slug-status");
+  const slugPrefix = document.getElementById("slug-prefix");
+  const saveMetaBtn = document.getElementById("btn-save-meta");
+  const urlInput = document.getElementById("published-url");
 
   if (!dropzone) return;
 
   loadConfig();
+
+  let currentSlug = "";
+  let currentTitle = "";
+  let slugOk = true;
+
+  if (slugPrefix) {
+    slugPrefix.textContent = window.location.origin + "/d/";
+  }
 
   function showError(msg) {
     errorMsg.textContent = msg;
@@ -291,6 +392,59 @@ function initUploadPage() {
     progressWrap.classList.toggle("active", active);
     if (label) progressLabel.textContent = label;
   }
+
+  function refreshPublishedUrl(slug) {
+    const url = publicUrlForSlug(slug);
+    urlInput.value = url;
+    document.getElementById("btn-view").href = url;
+    document.getElementById("btn-copy").onclick = () => copyToClipboard(url);
+  }
+
+  function updateSaveEnabled() {
+    const title = titleInput.value.trim();
+    const slug = normalizeSlugInput(slugInput.value);
+    const changed = title !== currentTitle || slug !== currentSlug;
+    saveMetaBtn.disabled = !changed || !title || !slugOk;
+  }
+
+  const slugChecker = createSlugChecker({
+    input: slugInput,
+    statusEl: slugStatus,
+    exceptSlug: () => currentSlug,
+    onChange: (result) => {
+      slugOk = !!(result.valid && result.available);
+      if (result.slug) {
+        refreshPublishedUrl(result.slug);
+      }
+      updateSaveEnabled();
+    },
+  });
+
+  titleInput.addEventListener("input", updateSaveEnabled);
+
+  saveMetaBtn.addEventListener("click", async () => {
+    const title = titleInput.value.trim();
+    const slug = normalizeSlugInput(slugInput.value);
+    if (!title || !slugOk) return;
+
+    saveMetaBtn.disabled = true;
+    try {
+      const result = await updateDashboardMeta(currentSlug, { title, slug });
+      currentSlug = result.slug;
+      currentTitle = result.title;
+      titleInput.value = result.title;
+      slugInput.value = result.slug;
+      refreshPublishedUrl(result.slug);
+      slugStatus.textContent = "Saved";
+      slugStatus.className = "field-hint ok";
+      showToast("Dashboard updated");
+      updateSaveEnabled();
+    } catch (e) {
+      showToast(e.message || "Failed to save changes", "error");
+      updateSaveEnabled();
+      slugChecker.checkNow();
+    }
+  });
 
   async function handleFile(file) {
     hideError();
@@ -312,12 +466,16 @@ function initUploadPage() {
       setProgress(false);
       successPanel.classList.add("active");
 
-      document.getElementById("success-title").textContent = result.title;
-      const urlInput = document.getElementById("published-url");
-      urlInput.value = result.url;
+      currentSlug = result.slug;
+      currentTitle = result.title;
+      titleInput.value = result.title;
+      slugInput.value = result.slug;
+      slugOk = true;
+      slugStatus.textContent = "Available";
+      slugStatus.className = "field-hint ok";
+      refreshPublishedUrl(result.slug);
+      updateSaveEnabled();
 
-      document.getElementById("btn-copy").onclick = () => copyToClipboard(result.url);
-      document.getElementById("btn-view").href = result.url;
       document.getElementById("btn-upload-another").onclick = () => location.reload();
     } catch (e) {
       showError(e.message || "Upload failed");
@@ -383,7 +541,6 @@ function initLibraryPage() {
       for (const d of dashboards) {
         const card = document.createElement("article");
         card.className = "dashboard-card";
-        const fullUrl = window.location.origin + d.url;
         const dateLabel = dashboardDateLabel(d);
 
         card.innerHTML =
@@ -408,14 +565,94 @@ function initLibraryPage() {
           "</div>" +
           '<div class="card-actions">' +
           '<button type="button" class="btn btn-secondary btn-sm btn-copy">Copy Link</button>' +
+          '<button type="button" class="btn btn-secondary btn-sm btn-edit">Edit</button>' +
           '<button type="button" class="btn btn-secondary btn-sm btn-replace">Upload New Version</button>' +
           '<a href="/api/dashboards/' +
           d.slug +
           '/download" class="btn btn-secondary btn-sm">Download</a>' +
           '<button type="button" class="btn btn-danger btn-sm btn-delete">Delete</button>' +
-          "</div></div>";
+          "</div>" +
+          '<div class="edit-panel">' +
+          '<label class="field"><span class="field-label">Name</span>' +
+          '<input type="text" class="edit-title" maxlength="120" value="' +
+          escapeHtml(d.title) +
+          '"></label>' +
+          '<label class="field"><span class="field-label">URL slug</span>' +
+          '<div class="slug-input-row"><span class="slug-prefix">' +
+          escapeHtml(window.location.origin + "/d/") +
+          '</span><input type="text" class="edit-slug" maxlength="48" spellcheck="false" value="' +
+          escapeHtml(d.slug) +
+          '"></div>' +
+          '<span class="field-hint edit-slug-status"></span></label>' +
+          '<div class="edit-actions">' +
+          '<button type="button" class="btn btn-primary btn-sm btn-save-edit" disabled>Save</button>' +
+          '<button type="button" class="btn btn-secondary btn-sm btn-cancel-edit">Cancel</button>' +
+          "</div></div></div>";
 
-        card.querySelector(".btn-copy").addEventListener("click", () => copyToClipboard(fullUrl));
+        let cardSlug = d.slug;
+        let cardTitle = d.title;
+        let cardSlugOk = true;
+        const editPanel = card.querySelector(".edit-panel");
+        const titleField = card.querySelector(".edit-title");
+        const slugField = card.querySelector(".edit-slug");
+        const slugStatus = card.querySelector(".edit-slug-status");
+        const saveEditBtn = card.querySelector(".btn-save-edit");
+
+        function updateCardSaveEnabled() {
+          const title = titleField.value.trim();
+          const slug = normalizeSlugInput(slugField.value);
+          const changed = title !== cardTitle || slug !== cardSlug;
+          saveEditBtn.disabled = !changed || !title || !cardSlugOk;
+        }
+
+        const checker = createSlugChecker({
+          input: slugField,
+          statusEl: slugStatus,
+          exceptSlug: () => cardSlug,
+          onChange: (result) => {
+            cardSlugOk = !!(result.valid && result.available);
+            updateCardSaveEnabled();
+          },
+        });
+
+        titleField.addEventListener("input", updateCardSaveEnabled);
+
+        card.querySelector(".btn-edit").addEventListener("click", () => {
+          editPanel.classList.add("active");
+          titleField.value = cardTitle;
+          slugField.value = cardSlug;
+          cardSlugOk = true;
+          slugStatus.textContent = "";
+          slugStatus.className = "field-hint edit-slug-status";
+          updateCardSaveEnabled();
+          titleField.focus();
+        });
+
+        card.querySelector(".btn-cancel-edit").addEventListener("click", () => {
+          editPanel.classList.remove("active");
+          titleField.value = cardTitle;
+          slugField.value = cardSlug;
+        });
+
+        saveEditBtn.addEventListener("click", async () => {
+          const title = titleField.value.trim();
+          const slug = normalizeSlugInput(slugField.value);
+          if (!title || !cardSlugOk) return;
+          saveEditBtn.disabled = true;
+          try {
+            await updateDashboardMeta(cardSlug, { title, slug });
+            showToast("Dashboard updated");
+            render();
+          } catch (e) {
+            showToast(e.message || "Failed to update", "error");
+            updateCardSaveEnabled();
+            checker.checkNow();
+          }
+        });
+
+        card.querySelector(".btn-copy").addEventListener("click", () =>
+          copyToClipboard(window.location.origin + "/d/" + cardSlug)
+        );
 
         card.querySelector(".btn-replace").addEventListener("click", () => {
           replaceSlug = d.slug;

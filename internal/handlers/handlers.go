@@ -192,6 +192,98 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, entries)
 }
 
+func (h *Handler) HandleSlugCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	slug := storage.NormalizeSlug(r.PathValue("slug"))
+	except := storage.NormalizeSlug(r.URL.Query().Get("except"))
+
+	if !storage.ValidSlug(slug) {
+		h.writeJSON(w, http.StatusOK, map[string]any{
+			"slug":      slug,
+			"available": false,
+			"valid":     false,
+			"error":     "use 2–48 characters: lowercase letters, numbers, and hyphens",
+		})
+		return
+	}
+
+	available, err := h.store.SlugAvailable(slug, except)
+	if err != nil {
+		if errors.Is(err, storage.ErrInvalidSlug) {
+			h.writeJSON(w, http.StatusOK, map[string]any{
+				"slug":      slug,
+				"available": false,
+				"valid":     false,
+				"error":     "invalid slug",
+			})
+			return
+		}
+		h.writeError(w, http.StatusInternalServerError, "failed to check slug")
+		return
+	}
+
+	resp := map[string]any{
+		"slug":      slug,
+		"available": available,
+		"valid":     true,
+	}
+	if !available {
+		resp["error"] = "slug is already taken"
+	}
+	h.writeJSON(w, http.StatusOK, resp)
+}
+
+type updateMetaRequest struct {
+	Title string `json:"title"`
+	Slug  string `json:"slug"`
+}
+
+func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	currentSlug := r.PathValue("slug")
+	if currentSlug == "" {
+		h.writeError(w, http.StatusBadRequest, "invalid slug")
+		return
+	}
+
+	var req updateMetaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	entry, err := h.store.UpdateMeta(currentSlug, req.Slug, req.Title)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrNotFound):
+			h.writeError(w, http.StatusNotFound, "dashboard not found")
+		case errors.Is(err, storage.ErrSlugTaken):
+			h.writeError(w, http.StatusConflict, "slug is already taken")
+		case errors.Is(err, storage.ErrInvalidSlug):
+			h.writeError(w, http.StatusBadRequest, "invalid slug")
+		case errors.Is(err, storage.ErrInvalidTitle):
+			h.writeError(w, http.StatusBadRequest, "title is required")
+		default:
+			h.writeError(w, http.StatusInternalServerError, "failed to update dashboard")
+		}
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, uploadResponse{
+		Slug:  entry.Slug,
+		URL:   h.absoluteURL(r, entry.URL),
+		Title: entry.Title,
+	})
+}
+
 func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

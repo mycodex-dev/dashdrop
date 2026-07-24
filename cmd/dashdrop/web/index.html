@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashdrop — Publish HTML instantly</title>
   <meta name="description" content="Drop a single HTML file and get a live link in seconds. Self-hosted static dashboard hosting.">
-  <link rel="stylesheet" href="/css/style.css?v=6">
+  <link rel="stylesheet" href="/css/style.css?v=7">
   <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js" defer></script>
 </head>
 <body>
@@ -47,7 +47,23 @@
     <div id="success" class="success-panel">
       <div class="success-icon">✓</div>
       <h2>Your dashboard is live!</h2>
-      <p class="title">Published: <strong id="success-title"></strong></p>
+
+      <div class="meta-form">
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input id="edit-title" type="text" maxlength="120" autocomplete="off" aria-label="Dashboard name">
+        </label>
+        <label class="field">
+          <span class="field-label">URL slug</span>
+          <div class="slug-input-row">
+            <span class="slug-prefix" id="slug-prefix"></span>
+            <input id="edit-slug" type="text" maxlength="48" autocomplete="off" spellcheck="false" aria-label="URL slug">
+          </div>
+          <span id="slug-status" class="field-hint" aria-live="polite"></span>
+        </label>
+        <button id="btn-save-meta" type="button" class="btn btn-primary btn-sm" disabled>Save changes</button>
+      </div>
+
       <div class="url-box">
         <input id="published-url" type="text" readonly aria-label="Published URL">
         <button id="btn-copy" type="button" class="btn btn-primary btn-sm">Copy</button>
@@ -61,6 +77,6 @@
   </main>
 
   <iframe id="thumb-frame" title="Thumbnail capture frame" sandbox="allow-same-origin allow-scripts"></iframe>
-  <script src="/js/app.js?v=6"></script>
+  <script src="/js/app.js?v=7"></script>
 </body>
 </html>
