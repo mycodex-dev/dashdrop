@@ -27,10 +27,11 @@ func New(store *storage.Store, cfg config.Config, static fs.FS) *Handler {
 }
 
 type uploadResponse struct {
-	Slug  string   `json:"slug"`
-	URL   string   `json:"url"`
-	Title string   `json:"title"`
-	Tags  []string `json:"tags,omitempty"`
+	Slug     string   `json:"slug"`
+	URL      string   `json:"url"`
+	Title    string   `json:"title"`
+	Tags     []string `json:"tags,omitempty"`
+	Archived bool     `json:"archived,omitempty"`
 }
 
 type errorResponse struct {
@@ -86,10 +87,11 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusCreated, uploadResponse{
-		Slug:  entry.Slug,
-		URL:   h.absoluteURL(r, entry.URL),
-		Title: entry.Title,
-		Tags:  entry.Tags,
+		Slug:     entry.Slug,
+		URL:      h.absoluteURL(r, entry.URL),
+		Title:    entry.Title,
+		Tags:     entry.Tags,
+		Archived: entry.Archived,
 	})
 }
 
@@ -132,10 +134,11 @@ func (h *Handler) HandleReplace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, uploadResponse{
-		Slug:  entry.Slug,
-		URL:   h.absoluteURL(r, entry.URL),
-		Title: entry.Title,
-		Tags:  entry.Tags,
+		Slug:     entry.Slug,
+		URL:      h.absoluteURL(r, entry.URL),
+		Title:    entry.Title,
+		Tags:     entry.Tags,
+		Archived: entry.Archived,
 	})
 }
 
@@ -223,11 +226,17 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+	archivedOnly := r.URL.Query().Get("archived") == "1" ||
+		strings.EqualFold(r.URL.Query().Get("archived"), "true")
+
 	var entries []storage.DashboardEntry
 	var err error
-	if tag != "" {
+	switch {
+	case archivedOnly:
+		entries, err = h.store.ListArchived()
+	case tag != "":
 		entries, err = h.store.ListByTag(tag)
-	} else {
+	default:
 		entries, err = h.store.List()
 	}
 	if err != nil {
@@ -303,9 +312,10 @@ func (h *Handler) HandleSlugCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateMetaRequest struct {
-	Title string    `json:"title"`
-	Slug  string    `json:"slug"`
-	Tags  *[]string `json:"tags"`
+	Title    string    `json:"title"`
+	Slug     string    `json:"slug"`
+	Tags     *[]string `json:"tags"`
+	Archived *bool     `json:"archived"`
 }
 
 func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
@@ -332,7 +342,18 @@ func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 		tags = *req.Tags
 	}
 
-	entry, err := h.store.UpdateMeta(currentSlug, req.Slug, req.Title, tags, updateTags)
+	archiveOnly := req.Archived != nil && req.Title == "" && req.Slug == "" && !updateTags
+
+	var entry storage.DashboardEntry
+	var err error
+	if archiveOnly {
+		entry, err = h.store.SetArchived(currentSlug, *req.Archived)
+	} else {
+		entry, err = h.store.UpdateMeta(currentSlug, req.Slug, req.Title, tags, updateTags)
+		if err == nil && req.Archived != nil {
+			entry, err = h.store.SetArchived(entry.Slug, *req.Archived)
+		}
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, storage.ErrNotFound):
@@ -352,10 +373,11 @@ func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, uploadResponse{
-		Slug:  entry.Slug,
-		URL:   h.absoluteURL(r, entry.URL),
-		Title: entry.Title,
-		Tags:  entry.Tags,
+		Slug:     entry.Slug,
+		URL:      h.absoluteURL(r, entry.URL),
+		Title:    entry.Title,
+		Tags:     entry.Tags,
+		Archived: entry.Archived,
 	})
 }
 

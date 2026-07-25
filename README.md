@@ -51,10 +51,10 @@ Data is stored in `./data` by default when running locally.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/upload` | Upload HTML + thumbnail (`multipart: html`, `thumb`) |
-| `GET` | `/api/dashboards` | List all dashboards (`?tag=` to filter) |
-| `GET` | `/api/tags` | List all unique tags |
+| `GET` | `/api/dashboards` | List active dashboards (`?tag=` to filter; `?archived=1` for archived only) |
+| `GET` | `/api/tags` | List unique tags from active dashboards |
 | `PUT` | `/api/dashboards/{slug}` | Replace dashboard with a new HTML version |
-| `PATCH` | `/api/dashboards/{slug}` | Update title, URL slug, and/or tags |
+| `PATCH` | `/api/dashboards/{slug}` | Update title, URL slug, tags, and/or `archived` |
 | `GET` | `/api/slugs/{slug}` | Check if a slug is available (`?except=` for current slug) |
 | `DELETE` | `/api/dashboards/{slug}` | Delete a dashboard |
 | `GET` | `/api/dashboards/{slug}/download` | Download the HTML file |

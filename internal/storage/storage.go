@@ -38,6 +38,7 @@ type DashboardMeta struct {
 	Slug             string    `json:"slug"`
 	Title            string    `json:"title"`
 	Tags             []string  `json:"tags,omitempty"`
+	Archived         bool      `json:"archived,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 	OriginalFilename string    `json:"original_filename"`
@@ -48,6 +49,7 @@ type DashboardEntry struct {
 	Slug      string    `json:"slug"`
 	Title     string    `json:"title"`
 	Tags      []string  `json:"tags,omitempty"`
+	Archived  bool      `json:"archived,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	ThumbURL  string    `json:"thumb_url"`
@@ -60,6 +62,7 @@ func (e DashboardEntry) MarshalJSON() ([]byte, error) {
 		Slug      string     `json:"slug"`
 		Title     string     `json:"title"`
 		Tags      []string   `json:"tags,omitempty"`
+		Archived  bool       `json:"archived,omitempty"`
 		CreatedAt time.Time  `json:"created_at"`
 		UpdatedAt *time.Time `json:"updated_at,omitempty"`
 		ThumbURL  string     `json:"thumb_url"`
@@ -69,6 +72,7 @@ func (e DashboardEntry) MarshalJSON() ([]byte, error) {
 		Slug:      e.Slug,
 		Title:     e.Title,
 		Tags:      e.Tags,
+		Archived:  e.Archived,
 		CreatedAt: e.CreatedAt,
 		ThumbURL:  e.ThumbURL,
 		URL:       e.URL,
@@ -203,11 +207,22 @@ func entryFromMeta(meta DashboardMeta) DashboardEntry {
 		Slug:      meta.Slug,
 		Title:     meta.Title,
 		Tags:      copyTags(meta.Tags),
+		Archived:  meta.Archived,
 		CreatedAt: meta.CreatedAt,
 		UpdatedAt: meta.UpdatedAt,
 		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", meta.Slug),
 		URL:       fmt.Sprintf("/d/%s", meta.Slug),
 	}
+}
+
+func filterByArchived(entries []DashboardEntry, archived bool) []DashboardEntry {
+	out := make([]DashboardEntry, 0)
+	for _, e := range entries {
+		if e.Archived == archived {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func generateSlug() (string, error) {
@@ -318,6 +333,7 @@ func (s *Store) UpdateMeta(currentSlug, newSlug, title string, tags []string, up
 		Slug:             newSlug,
 		Title:            title,
 		Tags:             normalizedTags,
+		Archived:         existing.Archived,
 		CreatedAt:        existing.CreatedAt,
 		UpdatedAt:        now,
 		OriginalFilename: existing.OriginalFilename,
@@ -343,6 +359,65 @@ func (s *Store) UpdateMeta(currentSlug, newSlug, title string, tags []string, up
 	found := false
 	for i, e := range entries {
 		if e.Slug == currentSlug || e.Slug == newSlug {
+			entries[i] = entry
+			found = true
+			break
+		}
+	}
+	if !found {
+		entries = append(entries, entry)
+	}
+	if err := s.writeManifest(entries); err != nil {
+		return DashboardEntry{}, err
+	}
+
+	return entry, nil
+}
+
+func (s *Store) SetArchived(slug string, archived bool) (DashboardEntry, error) {
+	slug = NormalizeSlug(slug)
+	if !ValidSlug(slug) {
+		return DashboardEntry{}, ErrInvalidSlug
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dir := s.dashboardDir(slug)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return DashboardEntry{}, ErrNotFound
+	}
+
+	existing, err := s.readMetaUnlocked(slug)
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+
+	now := time.Now().UTC()
+	meta := existing
+	meta.Archived = archived
+	meta.UpdatedAt = now
+	if meta.CreatedAt.IsZero() {
+		meta.CreatedAt = now
+	}
+
+	metaData, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+	if err := writeFileAtomic(filepath.Join(dir, "meta.json"), metaData, 0o644); err != nil {
+		return DashboardEntry{}, err
+	}
+
+	entry := entryFromMeta(meta)
+
+	entries, err := s.readManifest()
+	if err != nil {
+		return DashboardEntry{}, err
+	}
+	found := false
+	for i, e := range entries {
+		if e.Slug == slug {
 			entries[i] = entry
 			found = true
 			break
@@ -403,7 +478,21 @@ func (s *Store) writeManifest(entries []DashboardEntry) error {
 func (s *Store) List() ([]DashboardEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.readManifest()
+	entries, err := s.readManifest()
+	if err != nil {
+		return nil, err
+	}
+	return filterByArchived(entries, false), nil
+}
+
+func (s *Store) ListArchived() ([]DashboardEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := s.readManifest()
+	if err != nil {
+		return nil, err
+	}
+	return filterByArchived(entries, true), nil
 }
 
 func (s *Store) ListByTag(tag string) ([]DashboardEntry, error) {
@@ -553,6 +642,7 @@ func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htm
 		Slug:             slug,
 		Title:            titleFromFilename(originalFilename),
 		Tags:             copyTags(existing.Tags),
+		Archived:         existing.Archived,
 		CreatedAt:        existing.CreatedAt,
 		UpdatedAt:        now,
 		OriginalFilename: originalFilename,

@@ -254,8 +254,9 @@ async function replaceDashboard(slug, htmlFile, onProgress) {
   return data;
 }
 
-async function fetchDashboards() {
-  const res = await fetch("/api/dashboards");
+async function fetchDashboards({ archived } = {}) {
+  const url = archived ? "/api/dashboards?archived=1" : "/api/dashboards";
+  const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to load dashboards");
   return res.json();
 }
@@ -266,6 +267,19 @@ async function deleteDashboard(slug) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Failed to delete dashboard");
   }
+}
+
+async function setDashboardArchived(slug, archived) {
+  const res = await fetch("/api/dashboards/" + encodeURIComponent(slug), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archived }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || (archived ? "Failed to archive dashboard" : "Failed to restore dashboard"));
+  }
+  return data;
 }
 
 async function checkSlugAvailability(slug, exceptSlug) {
@@ -726,6 +740,10 @@ function initUploadPage() {
 function initLibraryPage() {
   const grid = document.getElementById("dashboard-grid");
   const emptyState = document.getElementById("empty-state");
+  const emptyStateTitle = document.getElementById("empty-state-title");
+  const emptyStateText = document.getElementById("empty-state-text");
+  const emptyStateUpload = document.getElementById("empty-state-upload");
+  const btnBackLibrary = document.getElementById("btn-back-library");
   const emptyFilter = document.getElementById("empty-filter");
   const emptyFilterTitle = document.getElementById("empty-filter-title");
   const emptyFilterText = document.getElementById("empty-filter-text");
@@ -739,6 +757,7 @@ function initLibraryPage() {
   const sortSelect = document.getElementById("library-sort");
   const viewGridBtn = document.getElementById("view-grid");
   const viewListBtn = document.getElementById("view-list");
+  const archivedModeBtn = document.getElementById("btn-archived-mode");
 
   if (!grid) return;
 
@@ -759,7 +778,9 @@ function initLibraryPage() {
   }
 
   let replaceSlug = null;
-  let activeTag = params.get("tag") || "";
+  let showArchived =
+    params.get("archived") === "1" || params.get("archived") === "true";
+  let activeTag = showArchived ? "" : params.get("tag") || "";
   let searchQuery = params.get("q") || "";
   let sortMode = storedOr("dashdrop-library-sort", SORT_OPTIONS, "newest");
   let viewMode = storedOr("dashdrop-library-view", VIEW_OPTIONS, "grid");
@@ -772,6 +793,7 @@ function initLibraryPage() {
     sortSelect.value = sortMode;
   }
   applyViewMode(viewMode);
+  applyArchivedModeUI();
 
   function persistPrefs() {
     try {
@@ -784,11 +806,20 @@ function initLibraryPage() {
 
   function syncUrl() {
     const url = new URL(window.location.href);
-    if (activeTag) url.searchParams.set("tag", activeTag);
+    if (showArchived) url.searchParams.set("archived", "1");
+    else url.searchParams.delete("archived");
+    if (activeTag && !showArchived) url.searchParams.set("tag", activeTag);
     else url.searchParams.delete("tag");
     if (searchQuery) url.searchParams.set("q", searchQuery);
     else url.searchParams.delete("q");
     window.history.replaceState({}, "", url);
+  }
+
+  function applyArchivedModeUI() {
+    if (archivedModeBtn) {
+      archivedModeBtn.classList.toggle("active", showArchived);
+      archivedModeBtn.setAttribute("aria-pressed", showArchived ? "true" : "false");
+    }
   }
 
   function applyViewMode(mode) {
@@ -806,10 +837,19 @@ function initLibraryPage() {
   }
 
   function setActiveTag(tag) {
+    if (showArchived) return;
     activeTag = tag || "";
     syncUrl();
     renderFilter();
     renderGrid();
+  }
+
+  async function setShowArchived(next) {
+    showArchived = !!next;
+    if (showArchived) activeTag = "";
+    applyArchivedModeUI();
+    syncUrl();
+    await loadAndRender();
   }
 
   function activityTime(d) {
@@ -821,7 +861,7 @@ function initLibraryPage() {
 
   function matchesSearch(d, query) {
     if (!query) return true;
-    const haystack = [d.title || "", d.slug || "", ...(d.tags || [])]
+    const haystack = [d.title || "", d.slug || "", ...(showArchived ? [] : d.tags || [])]
       .join(" ")
       .toLowerCase();
     return query
@@ -855,6 +895,11 @@ function initLibraryPage() {
 
   function renderFilter() {
     if (!tagFilterEl) return;
+    if (showArchived) {
+      tagFilterEl.style.display = "none";
+      tagFilterEl.innerHTML = "";
+      return;
+    }
     const tagSet = new Set();
     for (const d of allDashboards) {
       for (const t of d.tags || []) tagSet.add(t);
@@ -887,7 +932,7 @@ function initLibraryPage() {
 
   function visibleDashboards() {
     let list = allDashboards;
-    if (activeTag) {
+    if (!showArchived && activeTag) {
       list = list.filter((d) => (d.tags || []).includes(activeTag));
     }
     if (searchQuery) {
@@ -909,21 +954,33 @@ function initLibraryPage() {
 
   function renderGrid() {
     const dashboards = visibleDashboards();
+    const noun = showArchived ? "Archived dashboard" : "Dashboard";
     const parts = [
-      dashboards.length + " Dashboard" + (dashboards.length === 1 ? "" : "s"),
+      dashboards.length + " " + noun + (dashboards.length === 1 ? "" : "s"),
     ];
-    if (activeTag) parts.push('tagged "' + activeTag + '"');
+    if (!showArchived && activeTag) parts.push('tagged "' + activeTag + '"');
     if (searchQuery) parts.push('matching "' + searchQuery + '"');
     countEl.textContent = parts.join(" · ");
 
     if (toolbar) {
-      toolbar.style.display = allDashboards.length === 0 ? "none" : "flex";
+      toolbar.style.display = "flex";
     }
 
     if (allDashboards.length === 0) {
       emptyState.style.display = "block";
       if (emptyFilter) emptyFilter.style.display = "none";
       grid.style.display = "none";
+      if (showArchived) {
+        if (emptyStateTitle) emptyStateTitle.textContent = "No archived dashboards";
+        if (emptyStateText) emptyStateText.textContent = "Archived dashboards will appear here.";
+        if (emptyStateUpload) emptyStateUpload.style.display = "none";
+        if (btnBackLibrary) btnBackLibrary.style.display = "inline-flex";
+      } else {
+        if (emptyStateTitle) emptyStateTitle.textContent = "No dashboards yet";
+        if (emptyStateText) emptyStateText.textContent = "Upload your first HTML dashboard.";
+        if (emptyStateUpload) emptyStateUpload.style.display = "inline-flex";
+        if (btnBackLibrary) btnBackLibrary.style.display = "none";
+      }
       return;
     }
 
@@ -934,7 +991,7 @@ function initLibraryPage() {
         emptyFilter.style.display = "block";
         if (emptyFilterTitle) emptyFilterTitle.textContent = "No matching dashboards";
         if (emptyFilterText) {
-          if (searchQuery && activeTag) {
+          if (searchQuery && activeTag && !showArchived) {
             emptyFilterText.textContent =
               'Nothing matches "' + searchQuery + '" with tag "' + activeTag + '".';
           } else if (searchQuery) {
@@ -957,6 +1014,10 @@ function initLibraryPage() {
       card.className = "dashboard-card";
       const dateLabel = dashboardDateLabel(d);
       const tags = Array.isArray(d.tags) ? d.tags : [];
+      const tagsHtml = showArchived ? "" : renderTagChips(tags, { filterable: true });
+      const archiveMenuItem = showArchived
+        ? '<button type="button" class="card-menu-item btn-restore" role="menuitem">Restore</button>'
+        : '<button type="button" class="card-menu-item btn-archive" role="menuitem">Archive</button>';
 
       card.innerHTML =
         '<a href="' +
@@ -981,7 +1042,7 @@ function initLibraryPage() {
         '<div class="card-meta">' +
         (dateLabel ? '<div class="card-meta-line">' + dateLabel + "</div>" : "") +
         "</div>" +
-        renderTagChips(tags, { filterable: true }) +
+        tagsHtml +
         '<div class="card-actions">' +
         '<a href="' +
         d.url +
@@ -996,6 +1057,7 @@ function initLibraryPage() {
         '/download" class="card-menu-item" role="menuitem">Download</a>' +
         '<button type="button" class="card-menu-item btn-replace" role="menuitem">Upload New Version</button>' +
         '<hr class="card-menu-divider">' +
+        archiveMenuItem +
         '<button type="button" class="card-menu-item danger btn-delete" role="menuitem">Delete</button>' +
         "</div></div></div>" +
         '<div class="edit-panel">' +
@@ -1125,6 +1187,41 @@ function initLibraryPage() {
         replaceInput.click();
       });
 
+      const archiveBtn = card.querySelector(".btn-archive");
+      if (archiveBtn) {
+        archiveBtn.addEventListener("click", async () => {
+          closeAllMenus();
+          if (
+            !confirm(
+              'Archive "' + d.title + '"? It will be hidden from the library. You can restore it later.'
+            )
+          ) {
+            return;
+          }
+          try {
+            await setDashboardArchived(d.slug, true);
+            showToast("Dashboard archived");
+            await loadAndRender();
+          } catch (e) {
+            showToast(e.message, "error");
+          }
+        });
+      }
+
+      const restoreBtn = card.querySelector(".btn-restore");
+      if (restoreBtn) {
+        restoreBtn.addEventListener("click", async () => {
+          closeAllMenus();
+          try {
+            await setDashboardArchived(d.slug, false);
+            showToast("Dashboard restored");
+            await loadAndRender();
+          } catch (e) {
+            showToast(e.message, "error");
+          }
+        });
+      }
+
       card.querySelector(".btn-delete").addEventListener("click", async () => {
         closeAllMenus();
         if (!confirm('Delete "' + d.title + '"? This cannot be undone.')) return;
@@ -1143,7 +1240,7 @@ function initLibraryPage() {
 
   async function loadAndRender() {
     try {
-      allDashboards = await fetchDashboards();
+      allDashboards = await fetchDashboards({ archived: showArchived });
       loading.style.display = "none";
       renderFilter();
       renderGrid();
@@ -1209,6 +1306,18 @@ function initLibraryPage() {
     viewListBtn.addEventListener("click", () => {
       applyViewMode("list");
       persistPrefs();
+    });
+  }
+
+  if (archivedModeBtn) {
+    archivedModeBtn.addEventListener("click", () => {
+      setShowArchived(!showArchived);
+    });
+  }
+
+  if (btnBackLibrary) {
+    btnBackLibrary.addEventListener("click", () => {
+      setShowArchived(false);
     });
   }
 

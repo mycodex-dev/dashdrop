@@ -21,7 +21,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/style.css?v=17">
+  <link rel="stylesheet" href="/css/style.css?v=18">
 </head>
 <body>
   <header class="site-header">
@@ -68,6 +68,9 @@
         <kbd id="library-search-kbd" class="library-search-kbd" aria-hidden="true">⌘K</kbd>
       </label>
       <div class="library-toolbar-right">
+        <button type="button" id="btn-archived-mode" class="library-mode-btn" aria-pressed="false">
+          Archived
+        </button>
         <label class="library-sort">
           <span class="visually-hidden">Sort by</span>
           <select id="library-sort" aria-label="Sort dashboards">
@@ -103,12 +106,13 @@
           <rect x="14" y="14" width="7" height="7" rx="1.5"/>
         </svg>
       </div>
-      <h2>No dashboards yet</h2>
-      <p>Upload your first HTML dashboard.</p>
-      <a href="/" class="btn btn-primary btn-upload">
+      <h2 id="empty-state-title">No dashboards yet</h2>
+      <p id="empty-state-text">Upload your first HTML dashboard.</p>
+      <a href="/" id="empty-state-upload" class="btn btn-primary btn-upload">
         <span class="btn-upload-icon" aria-hidden="true">+</span>
         Upload Dashboard
       </a>
+      <button type="button" id="btn-back-library" class="btn btn-secondary" style="display: none">Back to library</button>
     </div>
 
     <div id="empty-filter" class="empty-state" style="display: none">
@@ -128,6 +132,6 @@
 
   <input id="replace-input" type="file" accept=".html,.htm,text/html" hidden>
   <iframe id="thumb-frame" title="Thumbnail capture frame" sandbox="allow-same-origin"></iframe>
-  <script src="/js/app.js?v=17"></script>
+  <script src="/js/app.js?v=18"></script>
 </body>
 </html>
