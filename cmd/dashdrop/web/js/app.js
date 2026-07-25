@@ -680,14 +680,16 @@ function initUploadPage() {
   const errorMsg = document.getElementById("error");
   const uploadSection = document.getElementById("upload-section");
   const titleInput = document.getElementById("edit-title");
+  const titleStatus = document.getElementById("title-status");
   const slugInput = document.getElementById("edit-slug");
   const slugStatus = document.getElementById("slug-status");
   const slugPrefix = document.getElementById("slug-prefix");
-  const saveMetaBtn = document.getElementById("btn-save-meta");
-  const urlInput = document.getElementById("published-url");
+  const copyBtn = document.getElementById("btn-copy");
+  const viewBtn = document.getElementById("btn-view");
   const tagsContainer = document.getElementById("edit-tags");
   const tagsStatus = document.getElementById("tags-status");
   const expiresPickerEl = document.getElementById("edit-expires-picker");
+  const expiresStatus = document.getElementById("expires-status");
   const browseLibraryBtn = document.getElementById("btn-browse-library");
 
   if (!dropzone) return;
@@ -700,34 +702,25 @@ function initUploadPage() {
   let currentExpires = "";
   let slugOk = true;
   let savingMeta = false;
-  let tagSaveTimer = null;
+  let metaSaveTimer = null;
+  let slugSaveTimer = null;
   let tagInput = null;
   let expiresPicker = null;
 
-  function updateSaveEnabled() {
-    const title = titleInput.value.trim();
-    const slug = normalizeSlugInput(slugInput.value);
-    const tags = tagInput ? tagInput.getTags() : [];
-    const expires = expiresPicker ? expiresPicker.getValue() : "";
-    const changed =
-      title !== currentTitle ||
-      slug !== currentSlug ||
-      !tagsEqual(tags, currentTags) ||
-      expires !== currentExpires;
-    saveMetaBtn.disabled = !changed || !title || !slugOk || savingMeta;
+  function draftSlug() {
+    return normalizeSlugInput(slugInput.value);
   }
 
   tagInput = tagsContainer
     ? createTagInput(tagsContainer, {
-        onChange: () => {
-          updateSaveEnabled();
-          scheduleTagSave();
-        },
+        onChange: () => scheduleMetaSave("tags"),
       })
     : null;
 
   expiresPicker = expiresPickerEl
-    ? createExpiresPicker(expiresPickerEl, { onChange: () => updateSaveEnabled() })
+    ? createExpiresPicker(expiresPickerEl, {
+        onChange: () => scheduleMetaSave("expires"),
+      })
     : null;
 
   if (slugPrefix) {
@@ -748,41 +741,69 @@ function initUploadPage() {
     if (label) progressLabel.textContent = label;
   }
 
-  function refreshPublishedUrl(slug) {
-    const url = publicUrlForSlug(slug);
-    urlInput.value = url;
-    document.getElementById("btn-view").href = url;
-    document.getElementById("btn-copy").onclick = () => copyToClipboard(url);
+  function setLiveLinks(slug) {
+    if (viewBtn) viewBtn.href = publicUrlForSlug(slug);
+  }
+
+  function setHint(el, text, kind) {
+    if (!el) return;
+    el.textContent = text;
+    el.className = "field-hint" + (kind ? " " + kind : "");
   }
 
   function setTagsStatus(text, kind) {
-    if (!tagsStatus) return;
-    tagsStatus.textContent = text;
-    tagsStatus.className = "field-hint" + (kind ? " " + kind : "");
+    setHint(tagsStatus, text, kind);
   }
 
-  async function saveMeta({ quiet } = {}) {
+  function setSlugStatus(text, kind) {
+    setHint(slugStatus, text, kind);
+  }
+
+  function setTitleStatus(text, kind) {
+    setHint(titleStatus, text, kind);
+  }
+
+  function setExpiresStatus(text, kind) {
+    setHint(expiresStatus, text, kind);
+  }
+
+  async function saveMeta({ quiet, slugOnly, reason } = {}) {
     const title = titleInput.value.trim();
-    const slug = normalizeSlugInput(slugInput.value);
-    const tags = tagInput ? tagInput.getTags() : [];
-    const expires = expiresPicker ? expiresPicker.getValue() : "";
-    if (!currentSlug || !title || !slugOk || savingMeta) return false;
+    const slug = draftSlug();
+    const tags = tagInput ? tagInput.getTags() : currentTags.slice();
+    const expires = expiresPicker ? expiresPicker.getValue() : currentExpires;
+    if (!currentSlug || savingMeta) return false;
+
+    if (!title) {
+      setTitleStatus("Name is required", "bad");
+      return false;
+    }
+
+    const nextSlug = slugOnly || slug !== currentSlug ? slug : currentSlug;
+    if ((slugOnly || slug !== currentSlug) && !slugOk) return false;
 
     const changed =
       title !== currentTitle ||
-      slug !== currentSlug ||
+      nextSlug !== currentSlug ||
       !tagsEqual(tags, currentTags) ||
       expires !== currentExpires;
     if (!changed) return true;
 
     savingMeta = true;
-    updateSaveEnabled();
-    if (!quiet) setTagsStatus("Saving…");
+    if (slugOnly || nextSlug !== currentSlug) {
+      setSlugStatus("Updating link…");
+    } else if (reason === "title") {
+      setTitleStatus("Saving…");
+    } else if (reason === "expires") {
+      setExpiresStatus("Saving…");
+    } else {
+      setTagsStatus("Saving…");
+    }
 
     try {
       const result = await updateDashboardMeta(currentSlug, {
         title,
-        slug,
+        slug: nextSlug,
         tags,
         expiresAt: expires,
       });
@@ -794,32 +815,77 @@ function initUploadPage() {
       slugInput.value = result.slug;
       tagInput?.setTags(currentTags);
       expiresPicker?.setValue(currentExpires);
-      refreshPublishedUrl(result.slug);
-      slugStatus.textContent = "Saved";
-      slugStatus.className = "field-hint ok";
-      setTagsStatus("Tags saved", "ok");
-      if (!quiet) showToast("Dashboard updated");
+      setLiveLinks(result.slug);
+      slugOk = true;
+
+      if (slugOnly) {
+        setSlugStatus("Link updated", "ok");
+      } else if (reason === "title") {
+        setTitleStatus("Saved", "ok");
+      } else if (reason === "expires") {
+        setExpiresStatus(
+          currentExpires ? expiresLabel(result.expires_at) || "Saved" : "No expiration",
+          "ok"
+        );
+      } else if (reason === "tags") {
+        setTagsStatus("Tags saved", "ok");
+      }
+      if (!quiet && !slugOnly) showToast("Dashboard updated");
       return true;
     } catch (e) {
-      setTagsStatus(e.message || "Failed to save tags", "bad");
+      if (slugOnly || nextSlug !== currentSlug) {
+        setSlugStatus(e.message || "Failed to update link", "bad");
+      } else if (reason === "title") {
+        setTitleStatus(e.message || "Failed to save", "bad");
+      } else if (reason === "expires") {
+        setExpiresStatus(e.message || "Failed to save", "bad");
+      } else {
+        setTagsStatus(e.message || "Failed to save", "bad");
+      }
       if (!quiet) showToast(e.message || "Failed to save changes", "error");
       slugChecker.checkNow();
       return false;
     } finally {
       savingMeta = false;
-      updateSaveEnabled();
     }
   }
 
-  function scheduleTagSave() {
-    clearTimeout(tagSaveTimer);
+  function scheduleMetaSave(reason) {
+    clearTimeout(metaSaveTimer);
     if (!currentSlug) return;
-    const tags = tagInput ? tagInput.getTags() : [];
-    if (tagsEqual(tags, currentTags)) return;
-    setTagsStatus("Saving…");
-    tagSaveTimer = setTimeout(() => {
-      saveMeta({ quiet: true });
+
+    if (reason === "title") {
+      const title = titleInput.value.trim();
+      if (!title) {
+        setTitleStatus("Name is required", "bad");
+        return;
+      }
+      if (title === currentTitle) return;
+      setTitleStatus("Saving…");
+    } else if (reason === "expires") {
+      const expires = expiresPicker ? expiresPicker.getValue() : "";
+      if (expires === currentExpires) return;
+      setExpiresStatus("Saving…");
+    } else {
+      const tags = tagInput ? tagInput.getTags() : [];
+      if (tagsEqual(tags, currentTags)) return;
+      setTagsStatus("Saving…");
+    }
+
+    metaSaveTimer = setTimeout(() => {
+      saveMeta({ quiet: true, reason });
     }, 350);
+  }
+
+  function scheduleSlugSave() {
+    clearTimeout(slugSaveTimer);
+    if (!currentSlug || !slugOk) return;
+    const slug = draftSlug();
+    if (!slug || slug === currentSlug) return;
+    setSlugStatus("Updating link…");
+    slugSaveTimer = setTimeout(() => {
+      saveMeta({ quiet: true, slugOnly: true });
+    }, 450);
   }
 
   const slugChecker = createSlugChecker({
@@ -828,30 +894,46 @@ function initUploadPage() {
     exceptSlug: () => currentSlug,
     onChange: (result) => {
       slugOk = !!(result.valid && result.available);
-      if (result.slug) {
-        refreshPublishedUrl(result.slug);
+      const slug = result.slug || draftSlug();
+      if (slug && slug === currentSlug && result.valid && result.available) {
+        setSlugStatus("Live link", "ok");
+        return;
       }
-      updateSaveEnabled();
+      if (slugOk && slug && slug !== currentSlug) {
+        scheduleSlugSave();
+      }
     },
   });
 
-  titleInput.addEventListener("input", updateSaveEnabled);
+  titleInput.addEventListener("input", () => scheduleMetaSave("title"));
 
-  saveMetaBtn.addEventListener("click", async () => {
-    clearTimeout(tagSaveTimer);
-    await saveMeta({ quiet: false });
-  });
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+      clearTimeout(slugSaveTimer);
+      clearTimeout(metaSaveTimer);
+      const slug = draftSlug();
+      if (slug && slug !== currentSlug) {
+        if (!slugOk) {
+          showToast("Fix the URL before copying", "error");
+          return;
+        }
+        const ok = await saveMeta({ quiet: true, slugOnly: true });
+        if (!ok) return;
+      }
+      await copyToClipboard(publicUrlForSlug(currentSlug));
+    });
+  }
 
   if (browseLibraryBtn) {
     browseLibraryBtn.addEventListener("click", async (e) => {
       e.preventDefault();
-      clearTimeout(tagSaveTimer);
-      // Flush any tag still sitting in the input field
+      clearTimeout(metaSaveTimer);
+      clearTimeout(slugSaveTimer);
       const field = tagsContainer?.querySelector(".tag-input-field");
       if (field && field.value.trim() && tagInput) {
         field.dispatchEvent(new Event("blur"));
       }
-      clearTimeout(tagSaveTimer);
+      clearTimeout(metaSaveTimer);
       await saveMeta({ quiet: true });
       window.location.href = "/library";
     });
@@ -886,11 +968,11 @@ function initUploadPage() {
       tagInput?.setTags(currentTags);
       expiresPicker?.setValue(currentExpires);
       slugOk = true;
-      slugStatus.textContent = "Available";
-      slugStatus.className = "field-hint ok";
+      setSlugStatus("Live link · edit to customize", "ok");
+      setTitleStatus("Saved as you type");
       setTagsStatus("Optional · saved as you add them · max 10");
-      refreshPublishedUrl(result.slug);
-      updateSaveEnabled();
+      setExpiresStatus("Optional · archives automatically after this date");
+      setLiveLinks(result.slug);
 
       document.getElementById("btn-upload-another").onclick = () => location.reload();
     } catch (e) {

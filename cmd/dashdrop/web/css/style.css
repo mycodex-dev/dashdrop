@@ -544,6 +544,55 @@ main {
   box-shadow: var(--focus-ring);
 }
 
+.live-url-control {
+  text-align: left;
+  max-width: 520px;
+  margin: 0 auto 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.live-url-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.4rem 0.4rem 0.85rem;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.live-url-row:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.live-url-prefix {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.live-url-row input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  padding: 0.45rem 0.25rem;
+  outline: none;
+}
+
+.live-url-row .btn {
+  flex-shrink: 0;
+}
+
 .slug-input-row {
   display: flex;
   align-items: center;
@@ -687,32 +736,6 @@ main {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
-}
-
-.url-box {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.5rem;
-  margin-bottom: 1.5rem;
-  max-width: 520px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.url-box input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  padding: 0.5rem;
-  outline: none;
-  min-width: 0;
 }
 
 .success-actions {
@@ -1586,13 +1609,23 @@ button.tag-chip-btn,
     padding: 2.5rem 1.25rem;
   }
 
-  .url-box {
-    flex-direction: column;
+  .live-url-row {
+    flex-wrap: wrap;
+    padding: 0.65rem;
   }
 
-  .url-box input {
+  .live-url-prefix {
     width: 100%;
-    text-align: center;
+    padding: 0 0.25rem;
+  }
+
+  .live-url-row input {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .live-url-row .btn {
+    width: 100%;
   }
 
   .success-actions {
