@@ -542,6 +542,144 @@ func (h *Handler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type settingsResponse struct {
+	AppName      string `json:"app_name"`
+	PrimaryColor string `json:"primary_color"`
+	HasLogo      bool   `json:"has_logo"`
+	LogoURL      string `json:"logo_url,omitempty"`
+}
+
+func (h *Handler) settingsPayload(r *http.Request, settings storage.InstanceSettings) settingsResponse {
+	hasLogo := settings.LogoFilename != ""
+	if hasLogo {
+		if _, _, err := h.store.LogoPath(); err != nil {
+			hasLogo = false
+		}
+	}
+	resp := settingsResponse{
+		AppName:      settings.AppName,
+		PrimaryColor: settings.PrimaryColor,
+		HasLogo:      hasLogo,
+	}
+	if resp.HasLogo {
+		resp.LogoURL = h.absoluteURL(r, "/api/settings/logo")
+	}
+	return resp
+}
+
+func (h *Handler) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	settings, err := h.store.GetSettings()
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "failed to load settings")
+		return
+	}
+	h.writeJSON(w, http.StatusOK, h.settingsPayload(r, settings))
+}
+
+func (h *Handler) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		AppName      string `json:"app_name"`
+		PrimaryColor string `json:"primary_color"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	settings, err := h.store.SaveSettings(body.AppName, body.PrimaryColor)
+	if err != nil {
+		if errors.Is(err, storage.ErrInvalidAppName) {
+			h.writeError(w, http.StatusBadRequest, "app name must be 1–64 characters")
+			return
+		}
+		if errors.Is(err, storage.ErrInvalidPrimaryColor) {
+			h.writeError(w, http.StatusBadRequest, "primary color must be a hex value like #0f766e")
+			return
+		}
+		h.writeError(w, http.StatusInternalServerError, "failed to save settings")
+		return
+	}
+	h.writeJSON(w, http.StatusOK, h.settingsPayload(r, settings))
+}
+
+func (h *Handler) HandleUploadLogo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	const maxLogoRequest = storage.MaxLogoBytes + (256 << 10)
+	r.Body = http.MaxBytesReader(w, r.Body, maxLogoRequest)
+	if err := r.ParseMultipartForm(maxLogoRequest); err != nil {
+		h.writeError(w, http.StatusBadRequest, "request too large or invalid")
+		return
+	}
+	defer cleanupMultipart(r)
+
+	file, header, err := r.FormFile("logo")
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "logo file is required")
+		return
+	}
+	defer file.Close()
+
+	settings, err := h.store.SaveLogo(header.Filename, file, header.Size)
+	if err != nil {
+		if errors.Is(err, storage.ErrInvalidLogo) {
+			h.writeError(w, http.StatusBadRequest, "logo must be png, jpg, webp, gif, or svg")
+			return
+		}
+		if errors.Is(err, storage.ErrTooLarge) {
+			h.writeError(w, http.StatusBadRequest, "logo exceeds maximum size (512 KB)")
+			return
+		}
+		h.writeError(w, http.StatusInternalServerError, "failed to save logo")
+		return
+	}
+	h.writeJSON(w, http.StatusOK, h.settingsPayload(r, settings))
+}
+
+func (h *Handler) HandleDeleteLogo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	settings, err := h.store.DeleteLogo()
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "failed to remove logo")
+		return
+	}
+	h.writeJSON(w, http.StatusOK, h.settingsPayload(r, settings))
+}
+
+func (h *Handler) HandleServeLogo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path, contentType, err := h.store.LogoPath()
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "failed to load logo", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	http.ServeFile(w, r, path)
+}
+
 func (h *Handler) ServeStatic(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "" {

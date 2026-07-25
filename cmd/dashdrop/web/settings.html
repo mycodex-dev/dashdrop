@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Dashdrop</title>
+  <meta name="description" content="Customize Dashdrop branding and appearance.">
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("dashdrop-theme");
+        var theme =
+          stored === "light" || stored === "dark"
+            ? stored
+            : window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+      try {
+        var brand = JSON.parse(localStorage.getItem("dashdrop-brand") || "null");
+        if (brand && brand.primary_color && /^#[0-9a-fA-F]{6}$/.test(brand.primary_color)) {
+          var root = document.documentElement;
+          root.style.setProperty("--brand-primary", brand.primary_color);
+          root.style.setProperty("--accent", brand.primary_color);
+        }
+      } catch (_) { /* ignore */ }
+    })();
+  </script>
+  <link rel="stylesheet" href="/css/style.css?v=26">
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="logo">
+      <span class="logo-icon" data-brand-logo>⚡</span>
+      <span data-brand-name>Dashdrop</span>
+    </a>
+    <nav class="site-nav">
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch to dark mode" aria-pressed="false" title="Toggle theme">
+        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 14.3A8.5 8.5 0 0 1 9.7 3a7 7 0 1 0 11.3 11.3z"/>
+        </svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+        </svg>
+      </button>
+      <a href="/settings" class="nav-icon-link active" aria-label="Settings" title="Settings" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </a>
+      <a href="/" class="nav-link">Upload</a>
+      <a href="/library" class="nav-link">Library</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="settings-header">
+      <h1>Settings</h1>
+      <p>Customize branding and appearance for this Dashdrop instance.</p>
+    </section>
+
+    <div id="settings-error" class="error-msg" role="alert"></div>
+    <div id="settings-status" class="settings-status" role="status" aria-live="polite"></div>
+
+    <form id="settings-form" class="settings-panel" autocomplete="off">
+      <section class="settings-section">
+        <h2>Branding</h2>
+        <p class="settings-section-desc">Shown in the header and footer for everyone who visits this instance.</p>
+
+        <label class="field">
+          <span class="field-label">Application name</span>
+          <input id="setting-app-name" type="text" maxlength="64" required aria-describedby="app-name-hint">
+          <span id="app-name-hint" class="field-hint">1–64 characters</span>
+        </label>
+
+        <div class="field">
+          <span class="field-label">Logo</span>
+          <div class="logo-upload">
+            <div id="logo-preview" class="logo-preview" aria-hidden="true">
+              <span class="logo-icon" data-logo-preview>⚡</span>
+            </div>
+            <div class="logo-upload-actions">
+              <label class="btn btn-secondary btn-sm">
+                Upload logo
+                <input id="setting-logo" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.svg" hidden>
+              </label>
+              <button type="button" id="btn-remove-logo" class="btn btn-ghost btn-sm" style="display: none">Remove</button>
+              <span class="field-hint">PNG, JPG, WebP, GIF, or SVG · max 512 KB</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Primary color</span>
+          <div class="color-field">
+            <input id="setting-color-picker" type="color" value="#0f766e" aria-label="Primary color picker">
+            <input id="setting-primary-color" type="text" maxlength="7" pattern="#[0-9A-Fa-f]{6}" spellcheck="false" aria-label="Primary color hex" placeholder="#0f766e">
+          </div>
+          <span class="field-hint">Used for buttons and accents</span>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>Appearance</h2>
+        <p class="settings-section-desc">Theme preference is saved in this browser only.</p>
+
+        <fieldset class="theme-fieldset">
+          <legend class="field-label">Theme</legend>
+          <div class="theme-options" role="radiogroup" aria-label="Theme">
+            <label class="theme-option">
+              <input type="radio" name="theme" value="light">
+              <span>Light</span>
+            </label>
+            <label class="theme-option">
+              <input type="radio" name="theme" value="dark">
+              <span>Dark</span>
+            </label>
+            <label class="theme-option">
+              <input type="radio" name="theme" value="system">
+              <span>System</span>
+            </label>
+          </div>
+        </fieldset>
+      </section>
+
+      <div class="settings-actions">
+        <button type="submit" id="btn-save-settings" class="btn btn-primary">Save changes</button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </main>
+
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <a href="/" class="site-footer-brand">
+        <span class="logo-icon" data-brand-logo aria-hidden="true">⚡</span>
+        <span data-brand-name>Dashdrop</span>
+      </a>
+      <p class="site-footer-meta">Self-hosted HTML hosting · Drop a file, get a live link</p>
+    </div>
+  </footer>
+
+  <script src="/js/app.js?v=24"></script>
+</body>
+</html>

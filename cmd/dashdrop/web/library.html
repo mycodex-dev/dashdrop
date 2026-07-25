@@ -19,15 +19,23 @@
       } catch (_) {
         document.documentElement.setAttribute("data-theme", "light");
       }
+      try {
+        var brand = JSON.parse(localStorage.getItem("dashdrop-brand") || "null");
+        if (brand && brand.primary_color && /^#[0-9a-fA-F]{6}$/.test(brand.primary_color)) {
+          var root = document.documentElement;
+          root.style.setProperty("--brand-primary", brand.primary_color);
+          root.style.setProperty("--accent", brand.primary_color);
+        }
+      } catch (_) { /* ignore */ }
     })();
   </script>
-  <link rel="stylesheet" href="/css/style.css?v=25">
+  <link rel="stylesheet" href="/css/style.css?v=26">
 </head>
 <body>
   <header class="site-header">
     <a href="/" class="logo">
-      <span class="logo-icon">⚡</span>
-      Dashdrop
+      <span class="logo-icon" data-brand-logo>⚡</span>
+      <span data-brand-name>Dashdrop</span>
     </a>
     <nav class="site-nav">
       <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch to dark mode" aria-pressed="false" title="Toggle theme">
@@ -39,6 +47,12 @@
           <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
         </svg>
       </button>
+      <a href="/settings" class="nav-icon-link" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </a>
       <a href="/" class="nav-link">Upload</a>
     </nav>
   </header>
@@ -133,8 +147,8 @@
   <footer class="site-footer">
     <div class="site-footer-inner">
       <a href="/" class="site-footer-brand">
-        <span class="logo-icon" aria-hidden="true">⚡</span>
-        Dashdrop
+        <span class="logo-icon" data-brand-logo aria-hidden="true">⚡</span>
+        <span data-brand-name>Dashdrop</span>
       </a>
       <p class="site-footer-meta">Self-hosted HTML hosting · Drop a file, get a live link</p>
     </div>
@@ -142,6 +156,6 @@
 
   <input id="replace-input" type="file" accept=".html,.htm,text/html" hidden>
   <iframe id="thumb-frame" title="Thumbnail capture frame" sandbox="allow-same-origin"></iframe>
-  <script src="/js/app.js?v=23"></script>
+  <script src="/js/app.js?v=24"></script>
 </body>
 </html>

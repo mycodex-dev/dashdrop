@@ -1688,45 +1688,436 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function getPreferredTheme() {
+const DEFAULT_PRIMARY_LIGHT = "#0f766e";
+const DEFAULT_PRIMARY_DARK = "#14b8a6";
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function clampByte(n) {
+  return Math.max(0, Math.min(255, Math.round(n)));
+}
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function rgbToHex(r, g, b) {
+  return (
+    "#" +
+    [r, g, b]
+      .map((x) => clampByte(x).toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+function deriveAccentVars(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  const hover = dark
+    ? rgbToHex(r + (255 - r) * 0.22, g + (255 - g) * 0.22, b + (255 - b) * 0.22)
+    : rgbToHex(r + (255 - r) * 0.18, g + (255 - g) * 0.18, b + (255 - b) * 0.18);
+  const softAlpha = dark ? 0.14 : 0.08;
+  const glowAlpha = dark ? 0.22 : 0.18;
+  return {
+    accent: hex.toLowerCase(),
+    hover,
+    soft: `rgba(${r}, ${g}, ${b}, ${softAlpha})`,
+    glow: `rgba(${r}, ${g}, ${b}, ${glowAlpha})`,
+    focus: `0 0 0 3px rgba(${r}, ${g}, ${b}, ${glowAlpha})`,
+  };
+}
+
+function applyAccentColor(hex) {
+  if (!HEX_COLOR_RE.test(hex)) return;
+  const vars = deriveAccentVars(hex);
+  const root = document.documentElement;
+  root.style.setProperty("--accent", vars.accent);
+  root.style.setProperty("--accent-hover", vars.hover);
+  root.style.setProperty("--accent-soft", vars.soft);
+  root.style.setProperty("--accent-glow", vars.glow);
+  root.style.setProperty("--focus-ring", vars.focus);
+  root.style.setProperty("--brand-primary", vars.accent);
+}
+
+function clearAccentOverride() {
+  const root = document.documentElement;
+  ["--accent", "--accent-hover", "--accent-soft", "--accent-glow", "--focus-ring", "--brand-primary"].forEach((prop) => {
+    root.style.removeProperty(prop);
+  });
+}
+
+function setLogoElement(el, logoUrl) {
+  if (!el) return;
+  if (logoUrl) {
+    el.classList.add("has-image");
+    el.innerHTML = `<img src="${escapeHtml(logoUrl)}" alt="">`;
+  } else {
+    el.classList.remove("has-image");
+    el.textContent = "⚡";
+  }
+}
+
+function applyBranding(settings) {
+  const name = (settings && settings.app_name) || "Dashdrop";
+  const hasLogo = !!(settings && settings.has_logo && settings.logo_url);
+  const logoUrl = hasLogo ? settings.logo_url + (settings.logo_url.includes("?") ? "&" : "?") + "t=" + Date.now() : "";
+  const primary = settings && HEX_COLOR_RE.test(settings.primary_color || "")
+    ? settings.primary_color.toLowerCase()
+    : null;
+
+  document.querySelectorAll("[data-brand-name]").forEach((el) => {
+    el.textContent = name;
+  });
+  document.querySelectorAll("[data-brand-logo]").forEach((el) => {
+    setLogoElement(el, hasLogo ? logoUrl : "");
+  });
+
+  if (primary) {
+    applyAccentColor(primary);
+  } else {
+    clearAccentOverride();
+  }
+
+  const path = window.location.pathname;
+  if (path === "/" || path === "") {
+    document.title = name + " — Publish HTML instantly";
+  } else if (path.startsWith("/library")) {
+    document.title = "Library — " + name;
+  } else if (path.startsWith("/settings")) {
+    document.title = "Settings — " + name;
+  }
+
   try {
-    const stored = localStorage.getItem("dashdrop-theme");
-    if (stored === "light" || stored === "dark") return stored;
+    localStorage.setItem(
+      "dashdrop-brand",
+      JSON.stringify({
+        app_name: name,
+        primary_color: primary || "",
+        has_logo: hasLogo,
+        logo_url: hasLogo ? "/api/settings/logo" : "",
+      })
+    );
   } catch (_) {
     /* ignore */
   }
+}
+
+function applyCachedBranding() {
+  try {
+    const brand = JSON.parse(localStorage.getItem("dashdrop-brand") || "null");
+    if (!brand) return;
+    document.querySelectorAll("[data-brand-name]").forEach((el) => {
+      if (brand.app_name) el.textContent = brand.app_name;
+    });
+    if (brand.has_logo && brand.logo_url) {
+      document.querySelectorAll("[data-brand-logo]").forEach((el) => {
+        setLogoElement(el, brand.logo_url);
+      });
+    }
+    if (brand.primary_color && HEX_COLOR_RE.test(brand.primary_color)) {
+      applyAccentColor(brand.primary_color);
+    }
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+async function loadBranding() {
+  applyCachedBranding();
+  try {
+    const res = await fetch("/api/settings");
+    if (!res.ok) return;
+    const data = await res.json();
+    applyBranding(data);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function getStoredThemePreference() {
+  try {
+    const stored = localStorage.getItem("dashdrop-theme");
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  } catch (_) {
+    /* ignore */
+  }
+  return "system";
+}
+
+function resolveTheme(preference) {
+  if (preference === "light" || preference === "dark") return preference;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function applyTheme(theme) {
-  const next = theme === "dark" ? "dark" : "light";
-  document.documentElement.setAttribute("data-theme", next);
-  try {
-    localStorage.setItem("dashdrop-theme", next);
-  } catch (_) {
-    /* ignore */
-  }
+function getPreferredTheme() {
+  return resolveTheme(getStoredThemePreference());
+}
+
+function updateThemeToggle(theme) {
   const btn = document.getElementById("theme-toggle");
-  if (btn) {
-    const dark = next === "dark";
-    btn.setAttribute("aria-pressed", dark ? "true" : "false");
-    btn.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
-    btn.title = dark ? "Switch to light mode" : "Switch to dark mode";
+  if (!btn) return;
+  const dark = theme === "dark";
+  btn.setAttribute("aria-pressed", dark ? "true" : "false");
+  btn.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+  btn.title = dark ? "Switch to light mode" : "Switch to dark mode";
+}
+
+function applyTheme(preference, { persist = true } = {}) {
+  const pref = preference === "light" || preference === "dark" || preference === "system" ? preference : "system";
+  const next = resolveTheme(pref);
+  document.documentElement.setAttribute("data-theme", next);
+  if (persist) {
+    try {
+      localStorage.setItem("dashdrop-theme", pref);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  updateThemeToggle(next);
+  // Re-derive accent soft/glow for the active theme.
+  const brandPrimary = document.documentElement.style.getPropertyValue("--brand-primary").trim();
+  if (HEX_COLOR_RE.test(brandPrimary)) {
+    applyAccentColor(brandPrimary);
   }
 }
 
 function initThemeToggle() {
-  applyTheme(getPreferredTheme());
+  applyTheme(getStoredThemePreference());
   const btn = document.getElementById("theme-toggle");
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
-    applyTheme(current === "dark" ? "light" : "dark");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      applyTheme(current === "dark" ? "light" : "dark");
+      const radios = document.querySelectorAll('input[name="theme"]');
+      radios.forEach((radio) => {
+        radio.checked = radio.value === (current === "dark" ? "light" : "dark");
+      });
+    });
+  }
+  try {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      if (getStoredThemePreference() === "system") {
+        applyTheme("system");
+      }
+    });
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function normalizeHexInput(value) {
+  let v = (value || "").trim();
+  if (!v.startsWith("#")) v = "#" + v;
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    v = "#" + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+  }
+  return v.toLowerCase();
+}
+
+function initSettingsPage() {
+  const form = document.getElementById("settings-form");
+  if (!form) return;
+
+  const nameInput = document.getElementById("setting-app-name");
+  const colorPicker = document.getElementById("setting-color-picker");
+  const colorHex = document.getElementById("setting-primary-color");
+  const logoInput = document.getElementById("setting-logo");
+  const removeLogoBtn = document.getElementById("btn-remove-logo");
+  const logoPreview = document.querySelector("[data-logo-preview]");
+  const errorEl = document.getElementById("settings-error");
+  const statusEl = document.getElementById("settings-status");
+  const saveBtn = document.getElementById("btn-save-settings");
+
+  let currentSettings = {
+    app_name: "Dashdrop",
+    primary_color: DEFAULT_PRIMARY_LIGHT,
+    has_logo: false,
+    logo_url: "",
+  };
+
+  function showError(msg) {
+    if (errorEl) {
+      errorEl.textContent = msg || "";
+      errorEl.style.display = msg ? "block" : "none";
+    }
+    if (statusEl && msg) {
+      statusEl.textContent = "";
+      statusEl.classList.remove("error");
+    }
+  }
+
+  function showStatus(msg, isError) {
+    if (!statusEl) return;
+    statusEl.textContent = msg || "";
+    statusEl.classList.toggle("error", !!isError);
+  }
+
+  function syncColorInputs(hex) {
+    const normalized = normalizeHexInput(hex);
+    if (!HEX_COLOR_RE.test(normalized)) return false;
+    colorPicker.value = normalized;
+    colorHex.value = normalized;
+    applyAccentColor(normalized);
+    return true;
+  }
+
+  function updateLogoPreview(settings) {
+    setLogoElement(logoPreview, settings.has_logo && settings.logo_url ? settings.logo_url + "?t=" + Date.now() : "");
+    if (removeLogoBtn) {
+      removeLogoBtn.style.display = settings.has_logo ? "inline-flex" : "none";
+    }
+  }
+
+  function fillForm(settings) {
+    currentSettings = settings;
+    nameInput.value = settings.app_name || "Dashdrop";
+    const color =
+      settings.primary_color && HEX_COLOR_RE.test(settings.primary_color)
+        ? settings.primary_color.toLowerCase()
+        : document.documentElement.getAttribute("data-theme") === "dark"
+          ? DEFAULT_PRIMARY_DARK
+          : DEFAULT_PRIMARY_LIGHT;
+    syncColorInputs(color);
+    updateLogoPreview(settings);
+
+    const pref = getStoredThemePreference();
+    document.querySelectorAll('input[name="theme"]').forEach((radio) => {
+      radio.checked = radio.value === pref;
+    });
+  }
+
+  colorPicker.addEventListener("input", () => {
+    syncColorInputs(colorPicker.value);
   });
+
+  colorHex.addEventListener("input", () => {
+    const normalized = normalizeHexInput(colorHex.value);
+    if (HEX_COLOR_RE.test(normalized)) {
+      colorPicker.value = normalized;
+      applyAccentColor(normalized);
+      showError("");
+    }
+  });
+
+  colorHex.addEventListener("blur", () => {
+    const normalized = normalizeHexInput(colorHex.value);
+    if (!syncColorInputs(normalized)) {
+      showError("Primary color must be a hex value like #0f766e");
+      colorHex.value = colorPicker.value;
+    }
+  });
+
+  document.querySelectorAll('input[name="theme"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      if (radio.checked) applyTheme(radio.value);
+    });
+  });
+
+  logoInput.addEventListener("change", async () => {
+    const file = logoInput.files && logoInput.files[0];
+    logoInput.value = "";
+    if (!file) return;
+    if (file.size > 512 * 1024) {
+      showError("Logo exceeds maximum size (512 KB)");
+      return;
+    }
+    showError("");
+    showStatus("Uploading logo...");
+    const body = new FormData();
+    body.append("logo", file);
+    try {
+      const res = await fetch("/api/settings/logo", { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(data.error || "Failed to upload logo");
+        showStatus("");
+        return;
+      }
+      fillForm(data);
+      applyBranding(data);
+      showStatus("Logo updated");
+    } catch (_) {
+      showError("Failed to upload logo");
+      showStatus("");
+    }
+  });
+
+  removeLogoBtn.addEventListener("click", async () => {
+    showError("");
+    showStatus("Removing logo...");
+    try {
+      const res = await fetch("/api/settings/logo", { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(data.error || "Failed to remove logo");
+        showStatus("");
+        return;
+      }
+      fillForm(data);
+      applyBranding(data);
+      showStatus("Logo removed");
+    } catch (_) {
+      showError("Failed to remove logo");
+      showStatus("");
+    }
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    showError("");
+    const appName = nameInput.value.trim();
+    const primaryColor = normalizeHexInput(colorHex.value);
+    if (!appName || appName.length > 64) {
+      showError("App name must be 1–64 characters");
+      return;
+    }
+    if (!HEX_COLOR_RE.test(primaryColor)) {
+      showError("Primary color must be a hex value like #0f766e");
+      return;
+    }
+    saveBtn.disabled = true;
+    showStatus("Saving...");
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ app_name: appName, primary_color: primaryColor }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(data.error || "Failed to save settings");
+        showStatus("");
+        return;
+      }
+      fillForm(data);
+      applyBranding(data);
+      showStatus("Settings saved");
+    } catch (_) {
+      showError("Failed to save settings");
+      showStatus("");
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  (async () => {
+    try {
+      const res = await fetch("/api/settings");
+      if (!res.ok) throw new Error("load failed");
+      const data = await res.json();
+      fillForm(data);
+      applyBranding(data);
+    } catch (_) {
+      fillForm(currentSettings);
+      showError("Could not load settings");
+    }
+  })();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   initThemeToggle();
+  loadBranding();
   initUploadPage();
   initLibraryPage();
+  initSettingsPage();
 });

@@ -33,6 +33,7 @@ var ErrTooLarge = errors.New("file exceeds maximum size")
 var reservedSlugs = map[string]bool{
 	"api": true, "library": true, "css": true, "js": true, "d": true,
 	"admin": true, "health": true, "static": true, "assets": true,
+	"settings": true, "branding": true,
 	"favicon.ico": true, "robots.txt": true,
 }
 
@@ -99,6 +100,10 @@ func New(dataDir string) (*Store, error) {
 	dashboardsDir := filepath.Join(dataDir, "dashboards")
 	if err := os.MkdirAll(dashboardsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create dashboards dir: %w", err)
+	}
+	brandingDir := filepath.Join(dataDir, "branding")
+	if err := os.MkdirAll(brandingDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create branding dir: %w", err)
 	}
 
 	s := &Store{dataDir: dataDir}
