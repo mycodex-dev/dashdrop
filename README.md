@@ -20,6 +20,7 @@ Open [http://localhost:8080](http://localhost:8080), drag-and-drop an HTML file,
 - **Instant publishing** — live URL in seconds, no account required
 - **Static by design** — no build step, no SSR, no runtime transforms
 - **Visual library** — browse all dashboards with auto-generated thumbnails
+- **Tags** — organize dashboards with tags and filter the library
 - **Local first** — filesystem storage, Docker Compose, one container
 
 ## Configuration
@@ -49,9 +50,10 @@ Data is stored in `./data` by default when running locally.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/upload` | Upload HTML + thumbnail (`multipart: html`, `thumb`) |
-| `GET` | `/api/dashboards` | List all dashboards |
+| `GET` | `/api/dashboards` | List all dashboards (`?tag=` to filter) |
+| `GET` | `/api/tags` | List all unique tags |
 | `PUT` | `/api/dashboards/{slug}` | Replace dashboard with a new HTML version |
-| `PATCH` | `/api/dashboards/{slug}` | Update title and/or custom URL slug |
+| `PATCH` | `/api/dashboards/{slug}` | Update title, URL slug, and/or tags |
 | `GET` | `/api/slugs/{slug}` | Check if a slug is available (`?except=` for current slug) |
 | `DELETE` | `/api/dashboards/{slug}` | Delete a dashboard |
 | `GET` | `/api/dashboards/{slug}/download` | Download the HTML file |

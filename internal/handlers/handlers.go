@@ -27,9 +27,10 @@ func New(store *storage.Store, cfg config.Config, static fs.FS) *Handler {
 }
 
 type uploadResponse struct {
-	Slug  string `json:"slug"`
-	URL   string `json:"url"`
-	Title string `json:"title"`
+	Slug  string   `json:"slug"`
+	URL   string   `json:"url"`
+	Title string   `json:"title"`
+	Tags  []string `json:"tags,omitempty"`
 }
 
 type errorResponse struct {
@@ -83,6 +84,7 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		Slug:  entry.Slug,
 		URL:   h.absoluteURL(r, entry.URL),
 		Title: entry.Title,
+		Tags:  entry.Tags,
 	})
 }
 
@@ -123,6 +125,7 @@ func (h *Handler) HandleReplace(w http.ResponseWriter, r *http.Request) {
 		Slug:  entry.Slug,
 		URL:   h.absoluteURL(r, entry.URL),
 		Title: entry.Title,
+		Tags:  entry.Tags,
 	})
 }
 
@@ -181,7 +184,14 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := h.store.List()
+	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+	var entries []storage.DashboardEntry
+	var err error
+	if tag != "" {
+		entries, err = h.store.ListByTag(tag)
+	} else {
+		entries, err = h.store.List()
+	}
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "failed to list dashboards")
 		return
@@ -190,6 +200,23 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 		entries = []storage.DashboardEntry{}
 	}
 	h.writeJSON(w, http.StatusOK, entries)
+}
+
+func (h *Handler) HandleTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tags, err := h.store.ListTags()
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "failed to list tags")
+		return
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	h.writeJSON(w, http.StatusOK, tags)
 }
 
 func (h *Handler) HandleSlugCheck(w http.ResponseWriter, r *http.Request) {
@@ -238,8 +265,9 @@ func (h *Handler) HandleSlugCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateMetaRequest struct {
-	Title string `json:"title"`
-	Slug  string `json:"slug"`
+	Title string    `json:"title"`
+	Slug  string    `json:"slug"`
+	Tags  *[]string `json:"tags"`
 }
 
 func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +288,13 @@ func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := h.store.UpdateMeta(currentSlug, req.Slug, req.Title)
+	var tags []string
+	updateTags := req.Tags != nil
+	if updateTags {
+		tags = *req.Tags
+	}
+
+	entry, err := h.store.UpdateMeta(currentSlug, req.Slug, req.Title, tags, updateTags)
 	if err != nil {
 		switch {
 		case errors.Is(err, storage.ErrNotFound):
@@ -271,6 +305,8 @@ func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusBadRequest, "invalid slug")
 		case errors.Is(err, storage.ErrInvalidTitle):
 			h.writeError(w, http.StatusBadRequest, "title is required")
+		case errors.Is(err, storage.ErrInvalidTags):
+			h.writeError(w, http.StatusBadRequest, "invalid tags (max 10, each up to 32 chars: letters, numbers, hyphens, underscores)")
 		default:
 			h.writeError(w, http.StatusInternalServerError, "failed to update dashboard")
 		}
@@ -281,6 +317,7 @@ func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 		Slug:  entry.Slug,
 		URL:   h.absoluteURL(r, entry.URL),
 		Title: entry.Title,
+		Tags:  entry.Tags,
 	})
 }
 

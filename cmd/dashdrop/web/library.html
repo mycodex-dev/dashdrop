@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Library — Dashdrop</title>
   <meta name="description" content="Browse all published HTML dashboards.">
-  <link rel="stylesheet" href="/css/style.css?v=7">
+  <link rel="stylesheet" href="/css/style.css?v=9">
 </head>
 <body>
   <header class="site-header">
@@ -27,6 +27,8 @@
       <a href="/" class="btn btn-primary">Upload new</a>
     </div>
 
+    <div id="tag-filter" class="tag-filter" style="display: none" aria-label="Filter by tag"></div>
+
     <div id="loading" class="loading">Loading dashboards...</div>
 
     <div id="empty-state" class="empty-state" style="display: none">
@@ -36,11 +38,18 @@
       <a href="/" class="btn btn-primary">Upload HTML</a>
     </div>
 
+    <div id="empty-filter" class="empty-state" style="display: none">
+      <div class="empty-icon">🏷️</div>
+      <h2>No matching dashboards</h2>
+      <p>No dashboards have this tag.</p>
+      <button type="button" id="btn-clear-filter" class="btn btn-secondary">Clear filter</button>
+    </div>
+
     <div id="dashboard-grid" class="dashboard-grid" style="display: none"></div>
   </main>
 
   <input id="replace-input" type="file" accept=".html,.htm,text/html" hidden>
   <iframe id="thumb-frame" title="Thumbnail capture frame" sandbox="allow-same-origin allow-scripts"></iframe>
-  <script src="/js/app.js?v=7"></script>
+  <script src="/js/app.js?v=10"></script>
 </body>
 </html>

@@ -37,6 +37,7 @@ func main() {
 	mux.HandleFunc("GET /api/config", h.HandleConfig)
 	mux.Handle("POST /api/upload", middleware.UploadRateLimit(uploadLimiter)(http.HandlerFunc(h.HandleUpload)))
 	mux.HandleFunc("GET /api/dashboards", h.HandleList)
+	mux.HandleFunc("GET /api/tags", h.HandleTags)
 	mux.HandleFunc("GET /api/slugs/{slug}", h.HandleSlugCheck)
 	mux.Handle("PUT /api/dashboards/{slug}", middleware.UploadRateLimit(uploadLimiter)(http.HandlerFunc(h.HandleReplace)))
 	mux.HandleFunc("PATCH /api/dashboards/{slug}", h.HandleUpdateMeta)

@@ -271,11 +271,15 @@ async function checkSlugAvailability(slug, exceptSlug) {
   return res.json();
 }
 
-async function updateDashboardMeta(currentSlug, { title, slug }) {
+async function updateDashboardMeta(currentSlug, { title, slug, tags }) {
+  const body = { title, slug };
+  if (tags !== undefined) {
+    body.tags = tags;
+  }
   const res = await fetch("/api/dashboards/" + encodeURIComponent(currentSlug), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, slug }),
+    body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -291,6 +295,133 @@ function normalizeSlugInput(value) {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/-{2,}/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+const MAX_TAGS = 10;
+const MAX_TAG_LEN = 32;
+
+function normalizeTagInput(value) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-_]+/g, "")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .slice(0, MAX_TAG_LEN);
+}
+
+function tagsEqual(a, b) {
+  const left = Array.isArray(a) ? a : [];
+  const right = Array.isArray(b) ? b : [];
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+}
+
+function renderTagChips(tags, { filterable } = {}) {
+  if (!tags || tags.length === 0) return "";
+  return (
+    '<div class="card-tags">' +
+    tags
+      .map((tag) => {
+        const cls = filterable ? "tag-chip tag-chip-btn" : "tag-chip";
+        const attr = filterable ? ' data-tag="' + escapeHtml(tag) + '"' : "";
+        return '<span class="' + cls + '"' + attr + ">" + escapeHtml(tag) + "</span>";
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+function createTagInput(container, { onChange } = {}) {
+  let tags = [];
+
+  container.classList.add("tag-input");
+  container.innerHTML =
+    '<div class="tag-input-chips"></div>' +
+    '<input type="text" class="tag-input-field" maxlength="' +
+    MAX_TAG_LEN +
+    '" autocomplete="off" spellcheck="false" aria-label="Add tag" placeholder="Add a tag">';
+
+  const chipsEl = container.querySelector(".tag-input-chips");
+  const input = container.querySelector(".tag-input-field");
+
+  function render(notify) {
+    chipsEl.innerHTML = tags
+      .map(
+        (tag, i) =>
+          '<span class="tag-chip">' +
+          escapeHtml(tag) +
+          '<button type="button" class="tag-chip-remove" data-index="' +
+          i +
+          '" aria-label="Remove ' +
+          escapeHtml(tag) +
+          '">×</button></span>'
+      )
+      .join("");
+    input.placeholder = tags.length === 0 ? container.dataset.placeholder || "Add a tag" : "";
+    input.disabled = tags.length >= MAX_TAGS;
+    if (notify) onChange?.(tags.slice());
+  }
+
+  function addTag(raw) {
+    const tag = normalizeTagInput(raw);
+    if (!tag || tags.includes(tag) || tags.length >= MAX_TAGS) {
+      input.value = "";
+      return;
+    }
+    tags.push(tag);
+    input.value = "";
+    render(true);
+  }
+
+  function removeAt(index) {
+    tags.splice(index, 1);
+    render(true);
+    input.focus();
+  }
+
+  chipsEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".tag-chip-remove");
+    if (!btn) return;
+    removeAt(Number(btn.dataset.index));
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === "," || e.key === "Tab") {
+      if (input.value.trim()) {
+        e.preventDefault();
+        addTag(input.value);
+      }
+    } else if (e.key === "Backspace" && !input.value && tags.length > 0) {
+      removeAt(tags.length - 1);
+    }
+  });
+
+  input.addEventListener("blur", () => {
+    if (input.value.trim()) addTag(input.value);
+  });
+
+  container.addEventListener("click", () => input.focus());
+
+  render(false);
+
+  return {
+    getTags: () => tags.slice(),
+    setTags: (next) => {
+      tags = Array.isArray(next) ? next.map(normalizeTagInput).filter(Boolean) : [];
+      const seen = new Set();
+      tags = tags.filter((t) => {
+        if (seen.has(t) || t.length > MAX_TAG_LEN) return false;
+        seen.add(t);
+        return true;
+      }).slice(0, MAX_TAGS);
+      input.value = "";
+      render(false);
+    },
+  };
 }
 
 function publicUrlForSlug(slug) {
@@ -366,6 +497,9 @@ function initUploadPage() {
   const slugPrefix = document.getElementById("slug-prefix");
   const saveMetaBtn = document.getElementById("btn-save-meta");
   const urlInput = document.getElementById("published-url");
+  const tagsContainer = document.getElementById("edit-tags");
+  const tagsStatus = document.getElementById("tags-status");
+  const browseLibraryBtn = document.getElementById("btn-browse-library");
 
   if (!dropzone) return;
 
@@ -373,7 +507,29 @@ function initUploadPage() {
 
   let currentSlug = "";
   let currentTitle = "";
+  let currentTags = [];
   let slugOk = true;
+  let savingMeta = false;
+  let tagSaveTimer = null;
+  let tagInput = null;
+
+  function updateSaveEnabled() {
+    const title = titleInput.value.trim();
+    const slug = normalizeSlugInput(slugInput.value);
+    const tags = tagInput ? tagInput.getTags() : [];
+    const changed =
+      title !== currentTitle || slug !== currentSlug || !tagsEqual(tags, currentTags);
+    saveMetaBtn.disabled = !changed || !title || !slugOk || savingMeta;
+  }
+
+  tagInput = tagsContainer
+    ? createTagInput(tagsContainer, {
+        onChange: () => {
+          updateSaveEnabled();
+          scheduleTagSave();
+        },
+      })
+    : null;
 
   if (slugPrefix) {
     slugPrefix.textContent = window.location.origin + "/d/";
@@ -400,11 +556,60 @@ function initUploadPage() {
     document.getElementById("btn-copy").onclick = () => copyToClipboard(url);
   }
 
-  function updateSaveEnabled() {
+  function setTagsStatus(text, kind) {
+    if (!tagsStatus) return;
+    tagsStatus.textContent = text;
+    tagsStatus.className = "field-hint" + (kind ? " " + kind : "");
+  }
+
+  async function saveMeta({ quiet } = {}) {
     const title = titleInput.value.trim();
     const slug = normalizeSlugInput(slugInput.value);
-    const changed = title !== currentTitle || slug !== currentSlug;
-    saveMetaBtn.disabled = !changed || !title || !slugOk;
+    const tags = tagInput ? tagInput.getTags() : [];
+    if (!currentSlug || !title || !slugOk || savingMeta) return false;
+
+    const changed =
+      title !== currentTitle || slug !== currentSlug || !tagsEqual(tags, currentTags);
+    if (!changed) return true;
+
+    savingMeta = true;
+    updateSaveEnabled();
+    if (!quiet) setTagsStatus("Saving…");
+
+    try {
+      const result = await updateDashboardMeta(currentSlug, { title, slug, tags });
+      currentSlug = result.slug;
+      currentTitle = result.title;
+      currentTags = Array.isArray(result.tags) ? result.tags : [];
+      titleInput.value = result.title;
+      slugInput.value = result.slug;
+      tagInput?.setTags(currentTags);
+      refreshPublishedUrl(result.slug);
+      slugStatus.textContent = "Saved";
+      slugStatus.className = "field-hint ok";
+      setTagsStatus("Tags saved", "ok");
+      if (!quiet) showToast("Dashboard updated");
+      return true;
+    } catch (e) {
+      setTagsStatus(e.message || "Failed to save tags", "bad");
+      if (!quiet) showToast(e.message || "Failed to save changes", "error");
+      slugChecker.checkNow();
+      return false;
+    } finally {
+      savingMeta = false;
+      updateSaveEnabled();
+    }
+  }
+
+  function scheduleTagSave() {
+    clearTimeout(tagSaveTimer);
+    if (!currentSlug) return;
+    const tags = tagInput ? tagInput.getTags() : [];
+    if (tagsEqual(tags, currentTags)) return;
+    setTagsStatus("Saving…");
+    tagSaveTimer = setTimeout(() => {
+      saveMeta({ quiet: true });
+    }, 350);
   }
 
   const slugChecker = createSlugChecker({
@@ -423,28 +628,24 @@ function initUploadPage() {
   titleInput.addEventListener("input", updateSaveEnabled);
 
   saveMetaBtn.addEventListener("click", async () => {
-    const title = titleInput.value.trim();
-    const slug = normalizeSlugInput(slugInput.value);
-    if (!title || !slugOk) return;
-
-    saveMetaBtn.disabled = true;
-    try {
-      const result = await updateDashboardMeta(currentSlug, { title, slug });
-      currentSlug = result.slug;
-      currentTitle = result.title;
-      titleInput.value = result.title;
-      slugInput.value = result.slug;
-      refreshPublishedUrl(result.slug);
-      slugStatus.textContent = "Saved";
-      slugStatus.className = "field-hint ok";
-      showToast("Dashboard updated");
-      updateSaveEnabled();
-    } catch (e) {
-      showToast(e.message || "Failed to save changes", "error");
-      updateSaveEnabled();
-      slugChecker.checkNow();
-    }
+    clearTimeout(tagSaveTimer);
+    await saveMeta({ quiet: false });
   });
+
+  if (browseLibraryBtn) {
+    browseLibraryBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      clearTimeout(tagSaveTimer);
+      // Flush any tag still sitting in the input field
+      const field = tagsContainer?.querySelector(".tag-input-field");
+      if (field && field.value.trim() && tagInput) {
+        field.dispatchEvent(new Event("blur"));
+      }
+      clearTimeout(tagSaveTimer);
+      await saveMeta({ quiet: true });
+      window.location.href = "/library";
+    });
+  }
 
   async function handleFile(file) {
     hideError();
@@ -468,11 +669,14 @@ function initUploadPage() {
 
       currentSlug = result.slug;
       currentTitle = result.title;
+      currentTags = Array.isArray(result.tags) ? result.tags : [];
       titleInput.value = result.title;
       slugInput.value = result.slug;
+      tagInput?.setTags(currentTags);
       slugOk = true;
       slugStatus.textContent = "Available";
       slugStatus.className = "field-hint ok";
+      setTagsStatus("Optional · saved as you add them · max 10");
       refreshPublishedUrl(result.slug);
       updateSaveEnabled();
 
@@ -510,173 +714,284 @@ function initUploadPage() {
 function initLibraryPage() {
   const grid = document.getElementById("dashboard-grid");
   const emptyState = document.getElementById("empty-state");
+  const emptyFilter = document.getElementById("empty-filter");
   const loading = document.getElementById("loading");
   const countEl = document.getElementById("dashboard-count");
   const replaceInput = document.getElementById("replace-input");
+  const tagFilterEl = document.getElementById("tag-filter");
+  const clearFilterBtn = document.getElementById("btn-clear-filter");
 
   if (!grid) return;
 
   loadConfig();
 
   let replaceSlug = null;
+  let activeTag = new URLSearchParams(window.location.search).get("tag") || "";
+  let allDashboards = [];
 
-  async function render() {
-    try {
-      const dashboards = await fetchDashboards();
-      loading.style.display = "none";
+  function setActiveTag(tag) {
+    activeTag = tag || "";
+    const url = new URL(window.location.href);
+    if (activeTag) {
+      url.searchParams.set("tag", activeTag);
+    } else {
+      url.searchParams.delete("tag");
+    }
+    window.history.replaceState({}, "", url);
+    renderFilter();
+    renderGrid();
+  }
 
-      countEl.textContent =
-        dashboards.length + " dashboard" + (dashboards.length === 1 ? "" : "s");
+  function renderFilter() {
+    if (!tagFilterEl) return;
+    const tagSet = new Set();
+    for (const d of allDashboards) {
+      for (const t of d.tags || []) tagSet.add(t);
+    }
+    const tags = Array.from(tagSet).sort();
+    if (tags.length === 0) {
+      tagFilterEl.style.display = "none";
+      tagFilterEl.innerHTML = "";
+      return;
+    }
 
-      if (dashboards.length === 0) {
-        emptyState.style.display = "block";
-        grid.style.display = "none";
-        return;
+    tagFilterEl.style.display = "flex";
+    tagFilterEl.innerHTML =
+      '<button type="button" class="tag-filter-chip' +
+      (activeTag ? "" : " active") +
+      '" data-tag="">All</button>' +
+      tags
+        .map(
+          (tag) =>
+            '<button type="button" class="tag-filter-chip' +
+            (activeTag === tag ? " active" : "") +
+            '" data-tag="' +
+            escapeHtml(tag) +
+            '">' +
+            escapeHtml(tag) +
+            "</button>"
+        )
+        .join("");
+  }
+
+  function visibleDashboards() {
+    if (!activeTag) return allDashboards;
+    return allDashboards.filter((d) => (d.tags || []).includes(activeTag));
+  }
+
+  function renderGrid() {
+    const dashboards = visibleDashboards();
+
+    countEl.textContent =
+      dashboards.length +
+      " dashboard" +
+      (dashboards.length === 1 ? "" : "s") +
+      (activeTag ? ' tagged "' + activeTag + '"' : "");
+
+    if (allDashboards.length === 0) {
+      emptyState.style.display = "block";
+      if (emptyFilter) emptyFilter.style.display = "none";
+      grid.style.display = "none";
+      return;
+    }
+
+    emptyState.style.display = "none";
+
+    if (dashboards.length === 0) {
+      if (emptyFilter) emptyFilter.style.display = "block";
+      grid.style.display = "none";
+      return;
+    }
+
+    if (emptyFilter) emptyFilter.style.display = "none";
+    grid.style.display = "grid";
+    grid.innerHTML = "";
+
+    for (const d of dashboards) {
+      const card = document.createElement("article");
+      card.className = "dashboard-card";
+      const dateLabel = dashboardDateLabel(d);
+      const tags = Array.isArray(d.tags) ? d.tags : [];
+
+      card.innerHTML =
+        '<a href="' +
+        d.url +
+        '" target="_blank" rel="noopener" class="card-thumb">' +
+        '<img src="' +
+        d.thumb_url +
+        "?t=" +
+        Date.now() +
+        '" alt="' +
+        escapeHtml(d.title) +
+        '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'">' +
+        '<div class="card-thumb-placeholder" style="display:none">📊</div>' +
+        "</a>" +
+        '<div class="card-body">' +
+        '<div class="card-title">' +
+        escapeHtml(d.title) +
+        "</div>" +
+        '<div class="card-meta">' +
+        dateLabel +
+        "</div>" +
+        renderTagChips(tags, { filterable: true }) +
+        '<div class="card-actions">' +
+        '<button type="button" class="btn btn-secondary btn-sm btn-copy">Copy Link</button>' +
+        '<button type="button" class="btn btn-secondary btn-sm btn-edit">Edit</button>' +
+        '<button type="button" class="btn btn-secondary btn-sm btn-replace">Upload New Version</button>' +
+        '<a href="/api/dashboards/' +
+        d.slug +
+        '/download" class="btn btn-secondary btn-sm">Download</a>' +
+        '<button type="button" class="btn btn-danger btn-sm btn-delete">Delete</button>' +
+        "</div>" +
+        '<div class="edit-panel">' +
+        '<label class="field"><span class="field-label">Name</span>' +
+        '<input type="text" class="edit-title" maxlength="120" value="' +
+        escapeHtml(d.title) +
+        '"></label>' +
+        '<label class="field"><span class="field-label">URL slug</span>' +
+        '<div class="slug-input-row"><span class="slug-prefix">' +
+        escapeHtml(window.location.origin + "/d/") +
+        '</span><input type="text" class="edit-slug" maxlength="48" spellcheck="false" value="' +
+        escapeHtml(d.slug) +
+        '"></div>' +
+        '<span class="field-hint edit-slug-status"></span></label>' +
+        '<div class="field"><span class="field-label">Tags</span>' +
+        '<div class="edit-tags tag-input" data-placeholder="Add a tag"></div></div>' +
+        '<div class="edit-actions">' +
+        '<button type="button" class="btn btn-primary btn-sm btn-save-edit" disabled>Save</button>' +
+        '<button type="button" class="btn btn-secondary btn-sm btn-cancel-edit">Cancel</button>' +
+        "</div></div></div>";
+
+      let cardSlug = d.slug;
+      let cardTitle = d.title;
+      let cardTags = tags.slice();
+      let cardSlugOk = true;
+      const editPanel = card.querySelector(".edit-panel");
+      const titleField = card.querySelector(".edit-title");
+      const slugField = card.querySelector(".edit-slug");
+      const slugStatus = card.querySelector(".edit-slug-status");
+      const saveEditBtn = card.querySelector(".btn-save-edit");
+      const tagsField = card.querySelector(".edit-tags");
+
+      const cardTagInput = createTagInput(tagsField, {
+        onChange: () => updateCardSaveEnabled(),
+      });
+      cardTagInput.setTags(cardTags);
+
+      function updateCardSaveEnabled() {
+        const title = titleField.value.trim();
+        const slug = normalizeSlugInput(slugField.value);
+        const nextTags = cardTagInput.getTags();
+        const changed =
+          title !== cardTitle || slug !== cardSlug || !tagsEqual(nextTags, cardTags);
+        saveEditBtn.disabled = !changed || !title || !cardSlugOk;
       }
 
-      emptyState.style.display = "none";
-      grid.style.display = "grid";
-      grid.innerHTML = "";
-
-      for (const d of dashboards) {
-        const card = document.createElement("article");
-        card.className = "dashboard-card";
-        const dateLabel = dashboardDateLabel(d);
-
-        card.innerHTML =
-          '<a href="' +
-          d.url +
-          '" target="_blank" rel="noopener" class="card-thumb">' +
-          '<img src="' +
-          d.thumb_url +
-          "?t=" +
-          Date.now() +
-          '" alt="' +
-          escapeHtml(d.title) +
-          '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'">' +
-          '<div class="card-thumb-placeholder" style="display:none">📊</div>' +
-          "</a>" +
-          '<div class="card-body">' +
-          '<div class="card-title">' +
-          escapeHtml(d.title) +
-          "</div>" +
-          '<div class="card-meta">' +
-          dateLabel +
-          "</div>" +
-          '<div class="card-actions">' +
-          '<button type="button" class="btn btn-secondary btn-sm btn-copy">Copy Link</button>' +
-          '<button type="button" class="btn btn-secondary btn-sm btn-edit">Edit</button>' +
-          '<button type="button" class="btn btn-secondary btn-sm btn-replace">Upload New Version</button>' +
-          '<a href="/api/dashboards/' +
-          d.slug +
-          '/download" class="btn btn-secondary btn-sm">Download</a>' +
-          '<button type="button" class="btn btn-danger btn-sm btn-delete">Delete</button>' +
-          "</div>" +
-          '<div class="edit-panel">' +
-          '<label class="field"><span class="field-label">Name</span>' +
-          '<input type="text" class="edit-title" maxlength="120" value="' +
-          escapeHtml(d.title) +
-          '"></label>' +
-          '<label class="field"><span class="field-label">URL slug</span>' +
-          '<div class="slug-input-row"><span class="slug-prefix">' +
-          escapeHtml(window.location.origin + "/d/") +
-          '</span><input type="text" class="edit-slug" maxlength="48" spellcheck="false" value="' +
-          escapeHtml(d.slug) +
-          '"></div>' +
-          '<span class="field-hint edit-slug-status"></span></label>' +
-          '<div class="edit-actions">' +
-          '<button type="button" class="btn btn-primary btn-sm btn-save-edit" disabled>Save</button>' +
-          '<button type="button" class="btn btn-secondary btn-sm btn-cancel-edit">Cancel</button>' +
-          "</div></div></div>";
-
-        let cardSlug = d.slug;
-        let cardTitle = d.title;
-        let cardSlugOk = true;
-        const editPanel = card.querySelector(".edit-panel");
-        const titleField = card.querySelector(".edit-title");
-        const slugField = card.querySelector(".edit-slug");
-        const slugStatus = card.querySelector(".edit-slug-status");
-        const saveEditBtn = card.querySelector(".btn-save-edit");
-
-        function updateCardSaveEnabled() {
-          const title = titleField.value.trim();
-          const slug = normalizeSlugInput(slugField.value);
-          const changed = title !== cardTitle || slug !== cardSlug;
-          saveEditBtn.disabled = !changed || !title || !cardSlugOk;
-        }
-
-        const checker = createSlugChecker({
-          input: slugField,
-          statusEl: slugStatus,
-          exceptSlug: () => cardSlug,
-          onChange: (result) => {
-            cardSlugOk = !!(result.valid && result.available);
-            updateCardSaveEnabled();
-          },
-        });
-
-        titleField.addEventListener("input", updateCardSaveEnabled);
-
-        card.querySelector(".btn-edit").addEventListener("click", () => {
-          editPanel.classList.add("active");
-          titleField.value = cardTitle;
-          slugField.value = cardSlug;
-          cardSlugOk = true;
-          slugStatus.textContent = "";
-          slugStatus.className = "field-hint edit-slug-status";
+      const checker = createSlugChecker({
+        input: slugField,
+        statusEl: slugStatus,
+        exceptSlug: () => cardSlug,
+        onChange: (result) => {
+          cardSlugOk = !!(result.valid && result.available);
           updateCardSaveEnabled();
-          titleField.focus();
+        },
+      });
+
+      titleField.addEventListener("input", updateCardSaveEnabled);
+
+      card.querySelectorAll(".tag-chip-btn").forEach((chip) => {
+        chip.addEventListener("click", (e) => {
+          e.preventDefault();
+          setActiveTag(chip.dataset.tag);
         });
+      });
 
-        card.querySelector(".btn-cancel-edit").addEventListener("click", () => {
-          editPanel.classList.remove("active");
-          titleField.value = cardTitle;
-          slugField.value = cardSlug;
-        });
+      card.querySelector(".btn-edit").addEventListener("click", () => {
+        editPanel.classList.add("active");
+        titleField.value = cardTitle;
+        slugField.value = cardSlug;
+        cardTagInput.setTags(cardTags);
+        cardSlugOk = true;
+        slugStatus.textContent = "";
+        slugStatus.className = "field-hint edit-slug-status";
+        updateCardSaveEnabled();
+        titleField.focus();
+      });
 
-        saveEditBtn.addEventListener("click", async () => {
-          const title = titleField.value.trim();
-          const slug = normalizeSlugInput(slugField.value);
-          if (!title || !cardSlugOk) return;
-          saveEditBtn.disabled = true;
-          try {
-            await updateDashboardMeta(cardSlug, { title, slug });
-            showToast("Dashboard updated");
-            render();
-          } catch (e) {
-            showToast(e.message || "Failed to update", "error");
-            updateCardSaveEnabled();
-            checker.checkNow();
-          }
-        });
+      card.querySelector(".btn-cancel-edit").addEventListener("click", () => {
+        editPanel.classList.remove("active");
+        titleField.value = cardTitle;
+        slugField.value = cardSlug;
+        cardTagInput.setTags(cardTags);
+      });
 
-        card.querySelector(".btn-copy").addEventListener("click", () =>
-          copyToClipboard(window.location.origin + "/d/" + cardSlug)
-        );
+      saveEditBtn.addEventListener("click", async () => {
+        const title = titleField.value.trim();
+        const slug = normalizeSlugInput(slugField.value);
+        const nextTags = cardTagInput.getTags();
+        if (!title || !cardSlugOk) return;
+        saveEditBtn.disabled = true;
+        try {
+          await updateDashboardMeta(cardSlug, { title, slug, tags: nextTags });
+          showToast("Dashboard updated");
+          await loadAndRender();
+        } catch (e) {
+          showToast(e.message || "Failed to update", "error");
+          updateCardSaveEnabled();
+          checker.checkNow();
+        }
+      });
 
-        card.querySelector(".btn-replace").addEventListener("click", () => {
-          replaceSlug = d.slug;
-          replaceInput.value = "";
-          replaceInput.click();
-        });
+      card.querySelector(".btn-copy").addEventListener("click", () =>
+        copyToClipboard(window.location.origin + "/d/" + cardSlug)
+      );
 
-        card.querySelector(".btn-delete").addEventListener("click", async () => {
-          if (!confirm('Delete "' + d.title + '"? This cannot be undone.')) return;
-          try {
-            await deleteDashboard(d.slug);
-            showToast("Dashboard deleted");
-            render();
-          } catch (e) {
-            showToast(e.message, "error");
-          }
-        });
+      card.querySelector(".btn-replace").addEventListener("click", () => {
+        replaceSlug = d.slug;
+        replaceInput.value = "";
+        replaceInput.click();
+      });
 
-        grid.appendChild(card);
+      card.querySelector(".btn-delete").addEventListener("click", async () => {
+        if (!confirm('Delete "' + d.title + '"? This cannot be undone.')) return;
+        try {
+          await deleteDashboard(d.slug);
+          showToast("Dashboard deleted");
+          await loadAndRender();
+        } catch (e) {
+          showToast(e.message, "error");
+        }
+      });
+
+      grid.appendChild(card);
+    }
+  }
+
+  async function loadAndRender() {
+    try {
+      allDashboards = await fetchDashboards();
+      loading.style.display = "none";
+      if (activeTag && !allDashboards.some((d) => (d.tags || []).includes(activeTag))) {
+        // keep filter selected even if empty results
       }
+      renderFilter();
+      renderGrid();
     } catch (e) {
       loading.textContent = "Failed to load dashboards";
       showToast(e.message, "error");
     }
+  }
+
+  if (tagFilterEl) {
+    tagFilterEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".tag-filter-chip");
+      if (!btn) return;
+      setActiveTag(btn.dataset.tag || "");
+    });
+  }
+
+  if (clearFilterBtn) {
+    clearFilterBtn.addEventListener("click", () => setActiveTag(""));
   }
 
   if (replaceInput) {
@@ -697,14 +1012,14 @@ function initLibraryPage() {
         showToast("Uploading new version...");
         await replaceDashboard(slug, file);
         showToast("New version published");
-        render();
+        await loadAndRender();
       } catch (e) {
         showToast(e.message || "Failed to upload new version", "error");
       }
     });
   }
 
-  render();
+  loadAndRender();
 }
 
 function escapeHtml(str) {

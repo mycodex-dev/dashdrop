@@ -18,11 +18,14 @@ const slugChars = "abcdefghijklmnopqrstuvwxyz0123456789"
 const slugLength = 6
 const minCustomSlugLen = 2
 const maxCustomSlugLen = 48
+const maxTagLen = 32
+const maxTagsPerDashboard = 10
 
 var ErrNotFound = errors.New("dashboard not found")
 var ErrInvalidSlug = errors.New("invalid slug")
 var ErrSlugTaken = errors.New("slug already taken")
 var ErrInvalidTitle = errors.New("invalid title")
+var ErrInvalidTags = errors.New("invalid tags")
 
 var reservedSlugs = map[string]bool{
 	"api": true, "library": true, "css": true, "js": true, "d": true,
@@ -33,6 +36,7 @@ var reservedSlugs = map[string]bool{
 type DashboardMeta struct {
 	Slug             string    `json:"slug"`
 	Title            string    `json:"title"`
+	Tags             []string  `json:"tags,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 	OriginalFilename string    `json:"original_filename"`
@@ -42,6 +46,7 @@ type DashboardMeta struct {
 type DashboardEntry struct {
 	Slug      string    `json:"slug"`
 	Title     string    `json:"title"`
+	Tags      []string  `json:"tags,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	ThumbURL  string    `json:"thumb_url"`
@@ -53,6 +58,7 @@ func (e DashboardEntry) MarshalJSON() ([]byte, error) {
 	type entryJSON struct {
 		Slug      string     `json:"slug"`
 		Title     string     `json:"title"`
+		Tags      []string   `json:"tags,omitempty"`
 		CreatedAt time.Time  `json:"created_at"`
 		UpdatedAt *time.Time `json:"updated_at,omitempty"`
 		ThumbURL  string     `json:"thumb_url"`
@@ -61,6 +67,7 @@ func (e DashboardEntry) MarshalJSON() ([]byte, error) {
 	out := entryJSON{
 		Slug:      e.Slug,
 		Title:     e.Title,
+		Tags:      e.Tags,
 		CreatedAt: e.CreatedAt,
 		ThumbURL:  e.ThumbURL,
 		URL:       e.URL,
@@ -139,6 +146,69 @@ func NormalizeTitle(title string) (string, error) {
 	return title, nil
 }
 
+// NormalizeTags lowercases, trims, dedupes, and validates tag strings.
+// Returns an empty non-nil slice when tags is empty so JSON round-trips cleanly.
+func NormalizeTags(tags []string) ([]string, error) {
+	if len(tags) == 0 {
+		return []string{}, nil
+	}
+	seen := make(map[string]bool, len(tags))
+	out := make([]string, 0, len(tags))
+	for _, raw := range tags {
+		tag := strings.ToLower(strings.TrimSpace(raw))
+		tag = strings.ReplaceAll(tag, " ", "-")
+		tag = strings.Map(func(r rune) rune {
+			switch {
+			case r >= 'a' && r <= 'z':
+				return r
+			case r >= '0' && r <= '9':
+				return r
+			case r == '-' || r == '_':
+				return r
+			default:
+				return -1
+			}
+		}, tag)
+		tag = strings.Trim(tag, "-_")
+		if tag == "" {
+			continue
+		}
+		if len(tag) > maxTagLen {
+			return nil, ErrInvalidTags
+		}
+		if seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		out = append(out, tag)
+		if len(out) > maxTagsPerDashboard {
+			return nil, ErrInvalidTags
+		}
+	}
+	return out, nil
+}
+
+func copyTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]string, len(tags))
+	copy(out, tags)
+	return out
+}
+
+func entryFromMeta(meta DashboardMeta) DashboardEntry {
+	return DashboardEntry{
+		Slug:      meta.Slug,
+		Title:     meta.Title,
+		Tags:      copyTags(meta.Tags),
+		CreatedAt: meta.CreatedAt,
+		UpdatedAt: meta.UpdatedAt,
+		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", meta.Slug),
+		URL:       fmt.Sprintf("/d/%s", meta.Slug),
+	}
+}
+
 func generateSlug() (string, error) {
 	b := make([]byte, slugLength)
 	if _, err := rand.Read(b); err != nil {
@@ -184,7 +254,7 @@ func (s *Store) SlugAvailable(slug string, exceptSlug string) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) UpdateMeta(currentSlug, newSlug, title string) (DashboardEntry, error) {
+func (s *Store) UpdateMeta(currentSlug, newSlug, title string, tags []string, updateTags bool) (DashboardEntry, error) {
 	currentSlug = NormalizeSlug(currentSlug)
 	newSlug = NormalizeSlug(newSlug)
 	if !ValidSlug(currentSlug) {
@@ -194,6 +264,13 @@ func (s *Store) UpdateMeta(currentSlug, newSlug, title string) (DashboardEntry, 
 	title, err := NormalizeTitle(title)
 	if err != nil {
 		return DashboardEntry{}, err
+	}
+	var normalizedTags []string
+	if updateTags {
+		normalizedTags, err = NormalizeTags(tags)
+		if err != nil {
+			return DashboardEntry{}, err
+		}
 	}
 	if newSlug == "" {
 		newSlug = currentSlug
@@ -231,10 +308,15 @@ func (s *Store) UpdateMeta(currentSlug, newSlug, title string) (DashboardEntry, 
 		}
 	}
 
+	if !updateTags {
+		normalizedTags = copyTags(existing.Tags)
+	}
+
 	now := time.Now().UTC()
 	meta := DashboardMeta{
 		Slug:             newSlug,
 		Title:            title,
+		Tags:             normalizedTags,
 		CreatedAt:        existing.CreatedAt,
 		UpdatedAt:        now,
 		OriginalFilename: existing.OriginalFilename,
@@ -251,14 +333,7 @@ func (s *Store) UpdateMeta(currentSlug, newSlug, title string) (DashboardEntry, 
 		return DashboardEntry{}, err
 	}
 
-	entry := DashboardEntry{
-		Slug:      newSlug,
-		Title:     title,
-		CreatedAt: meta.CreatedAt,
-		UpdatedAt: now,
-		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", newSlug),
-		URL:       fmt.Sprintf("/d/%s", newSlug),
-	}
+	entry := entryFromMeta(meta)
 
 	entries, err := s.readManifest()
 	if err != nil {
@@ -330,6 +405,46 @@ func (s *Store) List() ([]DashboardEntry, error) {
 	return s.readManifest()
 }
 
+func (s *Store) ListByTag(tag string) ([]DashboardEntry, error) {
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	entries, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	if tag == "" {
+		return entries, nil
+	}
+	filtered := make([]DashboardEntry, 0, len(entries))
+	for _, e := range entries {
+		for _, t := range e.Tags {
+			if t == tag {
+				filtered = append(filtered, e)
+				break
+			}
+		}
+	}
+	return filtered, nil
+}
+
+func (s *Store) ListTags() ([]string, error) {
+	entries, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool)
+	tags := make([]string, 0)
+	for _, e := range entries {
+		for _, t := range e.Tags {
+			if !seen[t] {
+				seen[t] = true
+				tags = append(tags, t)
+			}
+		}
+	}
+	sort.Strings(tags)
+	return tags, nil
+}
+
 func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int64, thumb io.Reader) (DashboardEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -360,6 +475,7 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 	meta := DashboardMeta{
 		Slug:             slug,
 		Title:            titleFromFilename(originalFilename),
+		Tags:             []string{},
 		CreatedAt:        now,
 		UpdatedAt:        now,
 		OriginalFilename: originalFilename,
@@ -375,14 +491,7 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 		return DashboardEntry{}, err
 	}
 
-	entry := DashboardEntry{
-		Slug:      slug,
-		Title:     meta.Title,
-		CreatedAt: now,
-		UpdatedAt: now,
-		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", slug),
-		URL:       fmt.Sprintf("/d/%s", slug),
-	}
+	entry := entryFromMeta(meta)
 
 	entries, err := s.readManifest()
 	if err != nil {
@@ -430,6 +539,7 @@ func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htm
 	meta := DashboardMeta{
 		Slug:             slug,
 		Title:            titleFromFilename(originalFilename),
+		Tags:             copyTags(existing.Tags),
 		CreatedAt:        existing.CreatedAt,
 		UpdatedAt:        now,
 		OriginalFilename: originalFilename,
@@ -446,14 +556,7 @@ func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htm
 		return DashboardEntry{}, err
 	}
 
-	entry := DashboardEntry{
-		Slug:      slug,
-		Title:     meta.Title,
-		CreatedAt: meta.CreatedAt,
-		UpdatedAt: now,
-		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", slug),
-		URL:       fmt.Sprintf("/d/%s", slug),
-	}
+	entry := entryFromMeta(meta)
 
 	entries, err := s.readManifest()
 	if err != nil {
