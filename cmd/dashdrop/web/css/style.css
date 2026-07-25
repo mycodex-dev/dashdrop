@@ -101,6 +101,8 @@ body {
   background-attachment: fixed;
   color: var(--text);
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   line-height: 1.5;
   overflow-x: hidden;
   transition: background-color var(--transition), color var(--transition);
@@ -237,9 +239,60 @@ a:hover {
 main {
   position: relative;
   z-index: 1;
+  flex: 1 0 auto;
+  width: 100%;
   padding: clamp(1.5rem, 5vw, 3rem);
   max-width: 1280px;
   margin: 0 auto;
+}
+
+/* =============================================================================
+   Site footer
+   ============================================================================= */
+.site-footer {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  background: var(--header-bg);
+  padding: calc(var(--space) * 2.5) clamp(1rem, 4vw, 2.5rem);
+}
+
+.site-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1280px;
+  margin: 0 auto;
+  flex-wrap: wrap;
+}
+
+.site-footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.site-footer-brand:hover {
+  color: var(--accent-hover);
+}
+
+.site-footer-brand .logo-icon {
+  width: 22px;
+  height: 22px;
+  font-size: 0.7rem;
+  border-radius: 6px;
+}
+
+.site-footer-meta {
+  color: var(--text-muted);
+  font-size: 0.85rem;
 }
 
 /* =============================================================================
@@ -1608,6 +1661,16 @@ button.tag-chip-btn,
 @media (max-width: 640px) {
   .site-header {
     padding: 1rem;
+  }
+
+  .site-footer {
+    padding: 1.25rem 1rem;
+  }
+
+  .site-footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
   }
 
   .dropzone {
