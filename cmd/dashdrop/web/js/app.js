@@ -715,31 +715,130 @@ function initLibraryPage() {
   const grid = document.getElementById("dashboard-grid");
   const emptyState = document.getElementById("empty-state");
   const emptyFilter = document.getElementById("empty-filter");
+  const emptyFilterTitle = document.getElementById("empty-filter-title");
+  const emptyFilterText = document.getElementById("empty-filter-text");
   const loading = document.getElementById("loading");
   const countEl = document.getElementById("dashboard-count");
   const replaceInput = document.getElementById("replace-input");
   const tagFilterEl = document.getElementById("tag-filter");
   const clearFilterBtn = document.getElementById("btn-clear-filter");
+  const toolbar = document.getElementById("library-toolbar");
+  const searchInput = document.getElementById("library-search");
+  const sortSelect = document.getElementById("library-sort");
+  const viewGridBtn = document.getElementById("view-grid");
+  const viewListBtn = document.getElementById("view-list");
 
   if (!grid) return;
 
   loadConfig();
 
+  const params = new URLSearchParams(window.location.search);
+  const SORT_OPTIONS = ["newest", "oldest", "name-asc", "name-desc"];
+  const VIEW_OPTIONS = ["grid", "list"];
+
+  function storedOr(key, allowed, fallback) {
+    try {
+      const value = localStorage.getItem(key);
+      if (allowed.includes(value)) return value;
+    } catch (_) {
+      /* ignore */
+    }
+    return fallback;
+  }
+
   let replaceSlug = null;
-  let activeTag = new URLSearchParams(window.location.search).get("tag") || "";
+  let activeTag = params.get("tag") || "";
+  let searchQuery = params.get("q") || "";
+  let sortMode = storedOr("dashdrop-library-sort", SORT_OPTIONS, "newest");
+  let viewMode = storedOr("dashdrop-library-view", VIEW_OPTIONS, "grid");
   let allDashboards = [];
+
+  if (searchInput && searchQuery) {
+    searchInput.value = searchQuery;
+  }
+  if (sortSelect) {
+    sortSelect.value = sortMode;
+  }
+  applyViewMode(viewMode);
+
+  function persistPrefs() {
+    try {
+      localStorage.setItem("dashdrop-library-sort", sortMode);
+      localStorage.setItem("dashdrop-library-view", viewMode);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function syncUrl() {
+    const url = new URL(window.location.href);
+    if (activeTag) url.searchParams.set("tag", activeTag);
+    else url.searchParams.delete("tag");
+    if (searchQuery) url.searchParams.set("q", searchQuery);
+    else url.searchParams.delete("q");
+    window.history.replaceState({}, "", url);
+  }
+
+  function applyViewMode(mode) {
+    viewMode = mode === "list" ? "list" : "grid";
+    grid.classList.toggle("view-grid", viewMode === "grid");
+    grid.classList.toggle("view-list", viewMode === "list");
+    if (viewGridBtn) {
+      viewGridBtn.classList.toggle("active", viewMode === "grid");
+      viewGridBtn.setAttribute("aria-pressed", viewMode === "grid" ? "true" : "false");
+    }
+    if (viewListBtn) {
+      viewListBtn.classList.toggle("active", viewMode === "list");
+      viewListBtn.setAttribute("aria-pressed", viewMode === "list" ? "true" : "false");
+    }
+  }
 
   function setActiveTag(tag) {
     activeTag = tag || "";
-    const url = new URL(window.location.href);
-    if (activeTag) {
-      url.searchParams.set("tag", activeTag);
-    } else {
-      url.searchParams.delete("tag");
-    }
-    window.history.replaceState({}, "", url);
+    syncUrl();
     renderFilter();
     renderGrid();
+  }
+
+  function activityTime(d) {
+    const updated = Date.parse(d.updated_at);
+    if (Number.isFinite(updated)) return updated;
+    const created = Date.parse(d.created_at);
+    return Number.isFinite(created) ? created : 0;
+  }
+
+  function matchesSearch(d, query) {
+    if (!query) return true;
+    const haystack = [d.title || "", d.slug || "", ...(d.tags || [])]
+      .join(" ")
+      .toLowerCase();
+    return query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .every((term) => haystack.includes(term));
+  }
+
+  function sortDashboards(list) {
+    const sorted = list.slice();
+    sorted.sort((a, b) => {
+      switch (sortMode) {
+        case "oldest":
+          return activityTime(a) - activityTime(b);
+        case "name-asc":
+          return (a.title || "").localeCompare(b.title || "", undefined, {
+            sensitivity: "base",
+          });
+        case "name-desc":
+          return (b.title || "").localeCompare(a.title || "", undefined, {
+            sensitivity: "base",
+          });
+        case "newest":
+        default:
+          return activityTime(b) - activityTime(a);
+      }
+    });
+    return sorted;
   }
 
   function renderFilter() {
@@ -775,18 +874,28 @@ function initLibraryPage() {
   }
 
   function visibleDashboards() {
-    if (!activeTag) return allDashboards;
-    return allDashboards.filter((d) => (d.tags || []).includes(activeTag));
+    let list = allDashboards;
+    if (activeTag) {
+      list = list.filter((d) => (d.tags || []).includes(activeTag));
+    }
+    if (searchQuery) {
+      list = list.filter((d) => matchesSearch(d, searchQuery));
+    }
+    return sortDashboards(list);
   }
 
   function renderGrid() {
     const dashboards = visibleDashboards();
+    const parts = [
+      dashboards.length + " dashboard" + (dashboards.length === 1 ? "" : "s"),
+    ];
+    if (activeTag) parts.push('tagged "' + activeTag + '"');
+    if (searchQuery) parts.push('matching "' + searchQuery + '"');
+    countEl.textContent = parts.join(" · ");
 
-    countEl.textContent =
-      dashboards.length +
-      " dashboard" +
-      (dashboards.length === 1 ? "" : "s") +
-      (activeTag ? ' tagged "' + activeTag + '"' : "");
+    if (toolbar) {
+      toolbar.style.display = allDashboards.length === 0 ? "none" : "flex";
+    }
 
     if (allDashboards.length === 0) {
       emptyState.style.display = "block";
@@ -798,7 +907,20 @@ function initLibraryPage() {
     emptyState.style.display = "none";
 
     if (dashboards.length === 0) {
-      if (emptyFilter) emptyFilter.style.display = "block";
+      if (emptyFilter) {
+        emptyFilter.style.display = "block";
+        if (emptyFilterTitle) emptyFilterTitle.textContent = "No matching dashboards";
+        if (emptyFilterText) {
+          if (searchQuery && activeTag) {
+            emptyFilterText.textContent =
+              'Nothing matches "' + searchQuery + '" with tag "' + activeTag + '".';
+          } else if (searchQuery) {
+            emptyFilterText.textContent = 'Nothing matches "' + searchQuery + '".';
+          } else {
+            emptyFilterText.textContent = "No dashboards have this tag.";
+          }
+        }
+      }
       grid.style.display = "none";
       return;
     }
@@ -829,6 +951,9 @@ function initLibraryPage() {
         '<div class="card-body">' +
         '<div class="card-title">' +
         escapeHtml(d.title) +
+        "</div>" +
+        '<div class="card-slug">/d/' +
+        escapeHtml(d.slug) +
         "</div>" +
         '<div class="card-meta">' +
         dateLabel +
@@ -971,15 +1096,46 @@ function initLibraryPage() {
     try {
       allDashboards = await fetchDashboards();
       loading.style.display = "none";
-      if (activeTag && !allDashboards.some((d) => (d.tags || []).includes(activeTag))) {
-        // keep filter selected even if empty results
-      }
       renderFilter();
       renderGrid();
     } catch (e) {
       loading.textContent = "Failed to load dashboards";
       showToast(e.message, "error");
     }
+  }
+
+  if (searchInput) {
+    let searchTimer = null;
+    searchInput.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchQuery = searchInput.value.trim();
+        syncUrl();
+        renderGrid();
+      }, 150);
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.addEventListener("change", () => {
+      sortMode = SORT_OPTIONS.includes(sortSelect.value) ? sortSelect.value : "newest";
+      persistPrefs();
+      renderGrid();
+    });
+  }
+
+  if (viewGridBtn) {
+    viewGridBtn.addEventListener("click", () => {
+      applyViewMode("grid");
+      persistPrefs();
+    });
+  }
+
+  if (viewListBtn) {
+    viewListBtn.addEventListener("click", () => {
+      applyViewMode("list");
+      persistPrefs();
+    });
   }
 
   if (tagFilterEl) {
@@ -991,7 +1147,14 @@ function initLibraryPage() {
   }
 
   if (clearFilterBtn) {
-    clearFilterBtn.addEventListener("click", () => setActiveTag(""));
+    clearFilterBtn.addEventListener("click", () => {
+      activeTag = "";
+      searchQuery = "";
+      if (searchInput) searchInput.value = "";
+      syncUrl();
+      renderFilter();
+      renderGrid();
+    });
   }
 
   if (replaceInput) {

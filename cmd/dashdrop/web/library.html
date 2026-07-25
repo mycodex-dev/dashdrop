@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Library — Dashdrop</title>
   <meta name="description" content="Browse all published HTML dashboards.">
-  <link rel="stylesheet" href="/css/style.css?v=9">
+  <link rel="stylesheet" href="/css/style.css?v=10">
 </head>
 <body>
   <header class="site-header">
@@ -27,6 +27,34 @@
       <a href="/" class="btn btn-primary">Upload new</a>
     </div>
 
+    <div id="library-toolbar" class="library-toolbar" style="display: none" aria-label="Organize library">
+      <label class="library-search">
+        <span class="visually-hidden">Search dashboards</span>
+        <input id="library-search" type="search" placeholder="Search by name, slug, or tag" autocomplete="off">
+      </label>
+      <div class="library-toolbar-right">
+        <label class="library-sort">
+          <span class="visually-hidden">Sort by</span>
+          <select id="library-sort" aria-label="Sort dashboards">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name-asc">Name A–Z</option>
+            <option value="name-desc">Name Z–A</option>
+          </select>
+        </label>
+        <div class="view-toggle" role="group" aria-label="View mode">
+          <button type="button" id="view-grid" class="view-toggle-btn active" aria-pressed="true" title="Grid view">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+            <span class="visually-hidden">Grid</span>
+          </button>
+          <button type="button" id="view-list" class="view-toggle-btn" aria-pressed="false" title="List view">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="2" width="14" height="3" rx="1"/><rect x="1" y="6.5" width="14" height="3" rx="1"/><rect x="1" y="11" width="14" height="3" rx="1"/></svg>
+            <span class="visually-hidden">List</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="tag-filter" class="tag-filter" style="display: none" aria-label="Filter by tag"></div>
 
     <div id="loading" class="loading">Loading dashboards...</div>
@@ -40,16 +68,16 @@
 
     <div id="empty-filter" class="empty-state" style="display: none">
       <div class="empty-icon">🏷️</div>
-      <h2>No matching dashboards</h2>
-      <p>No dashboards have this tag.</p>
-      <button type="button" id="btn-clear-filter" class="btn btn-secondary">Clear filter</button>
+      <h2 id="empty-filter-title">No matching dashboards</h2>
+      <p id="empty-filter-text">No dashboards have this tag.</p>
+      <button type="button" id="btn-clear-filter" class="btn btn-secondary">Clear filters</button>
     </div>
 
-    <div id="dashboard-grid" class="dashboard-grid" style="display: none"></div>
+    <div id="dashboard-grid" class="dashboard-grid view-grid" style="display: none"></div>
   </main>
 
   <input id="replace-input" type="file" accept=".html,.htm,text/html" hidden>
   <iframe id="thumb-frame" title="Thumbnail capture frame" sandbox="allow-same-origin allow-scripts"></iframe>
-  <script src="/js/app.js?v=10"></script>
+  <script src="/js/app.js?v=11"></script>
 </body>
 </html>
