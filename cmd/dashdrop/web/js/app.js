@@ -57,6 +57,165 @@ function dashboardDateLabel(d) {
   return "";
 }
 
+function expiresDateInputValue(expiresAt) {
+  if (!isValidTimestamp(expiresAt)) return "";
+  const d = new Date(expiresAt);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
+function expiresLabel(expiresAt) {
+  if (!isValidTimestamp(expiresAt)) return "";
+  const d = new Date(expiresAt);
+  const formatted = d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  if (d.getTime() < Date.now()) {
+    return "Expired " + formatted;
+  }
+  return "Expires " + formatted;
+}
+
+function expiresEqual(a, b) {
+  return expiresDateInputValue(a) === expiresDateInputValue(b);
+}
+
+function utcDatePlusDays(days) {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() + days);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
+const EXPIRE_PRESETS = [
+  { id: "never", label: "Never", days: null },
+  { id: "7d", label: "1 week", days: 7 },
+  { id: "14d", label: "2 weeks", days: 14 },
+  { id: "30d", label: "1 month", days: 30 },
+  { id: "custom", label: "Custom", days: undefined },
+];
+
+function createExpiresPicker(container, { onChange } = {}) {
+  let mode = "never";
+  let customDate = "";
+
+  container.classList.add("expires-picker");
+  container.innerHTML =
+    '<div class="expires-presets" role="group" aria-label="Expiration timeframe"></div>' +
+    '<div class="expires-custom">' +
+    '<input type="date" class="expires-date" aria-label="Custom expiration date">' +
+    "</div>";
+
+  const presetsEl = container.querySelector(".expires-presets");
+  const customWrap = container.querySelector(".expires-custom");
+  const dateInput = container.querySelector(".expires-date");
+
+  presetsEl.innerHTML = EXPIRE_PRESETS.map(
+    (p) =>
+      '<button type="button" class="expires-preset" data-preset="' +
+      p.id +
+      '">' +
+      p.label +
+      "</button>"
+  ).join("");
+
+  function activePresetId() {
+    if (mode === "never") return "never";
+    if (mode === "custom") return "custom";
+    return mode;
+  }
+
+  function getValue() {
+    if (mode === "never") return "";
+    if (mode === "custom") return customDate || "";
+    const preset = EXPIRE_PRESETS.find((p) => p.id === mode);
+    if (!preset || preset.days == null) return "";
+    return utcDatePlusDays(preset.days);
+  }
+
+  function render(notify) {
+    const active = activePresetId();
+    presetsEl.querySelectorAll(".expires-preset").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.preset === active);
+    });
+    customWrap.classList.toggle("visible", mode === "custom");
+    if (mode === "custom") {
+      dateInput.value = customDate;
+    }
+    if (notify) onChange?.(getValue());
+  }
+
+  function setValue(raw) {
+    const value = typeof raw === "string" ? raw : expiresDateInputValue(raw);
+    if (!value) {
+      mode = "never";
+      customDate = "";
+      render(false);
+      return;
+    }
+    const match = EXPIRE_PRESETS.find(
+      (p) => typeof p.days === "number" && utcDatePlusDays(p.days) === value
+    );
+    if (match) {
+      mode = match.id;
+      customDate = value;
+    } else {
+      mode = "custom";
+      customDate = value;
+    }
+    render(false);
+  }
+
+  presetsEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".expires-preset");
+    if (!btn) return;
+    const id = btn.dataset.preset;
+    if (id === "custom") {
+      mode = "custom";
+      if (!customDate) {
+        customDate = utcDatePlusDays(7);
+      }
+      render(true);
+      dateInput.focus();
+      return;
+    }
+    mode = id;
+    if (id !== "never") {
+      const preset = EXPIRE_PRESETS.find((p) => p.id === id);
+      if (preset && typeof preset.days === "number") {
+        customDate = utcDatePlusDays(preset.days);
+      }
+    } else {
+      customDate = "";
+    }
+    render(true);
+  });
+
+  dateInput.addEventListener("change", () => {
+    customDate = dateInput.value || "";
+    mode = customDate ? "custom" : "never";
+    render(true);
+  });
+
+  dateInput.addEventListener("input", () => {
+    customDate = dateInput.value || "";
+    mode = customDate ? "custom" : "never";
+    render(true);
+  });
+
+  render(false);
+
+  return { getValue, setValue };
+}
+
 function showToast(message, type = "success") {
   let container = document.querySelector(".toast-container");
   if (!container) {
@@ -289,10 +448,13 @@ async function checkSlugAvailability(slug, exceptSlug) {
   return res.json();
 }
 
-async function updateDashboardMeta(currentSlug, { title, slug, tags }) {
+async function updateDashboardMeta(currentSlug, { title, slug, tags, expiresAt }) {
   const body = { title, slug };
   if (tags !== undefined) {
     body.tags = tags;
+  }
+  if (expiresAt !== undefined) {
+    body.expires_at = expiresAt || "";
   }
   const res = await fetch("/api/dashboards/" + encodeURIComponent(currentSlug), {
     method: "PATCH",
@@ -525,6 +687,7 @@ function initUploadPage() {
   const urlInput = document.getElementById("published-url");
   const tagsContainer = document.getElementById("edit-tags");
   const tagsStatus = document.getElementById("tags-status");
+  const expiresPickerEl = document.getElementById("edit-expires-picker");
   const browseLibraryBtn = document.getElementById("btn-browse-library");
 
   if (!dropzone) return;
@@ -534,17 +697,23 @@ function initUploadPage() {
   let currentSlug = "";
   let currentTitle = "";
   let currentTags = [];
+  let currentExpires = "";
   let slugOk = true;
   let savingMeta = false;
   let tagSaveTimer = null;
   let tagInput = null;
+  let expiresPicker = null;
 
   function updateSaveEnabled() {
     const title = titleInput.value.trim();
     const slug = normalizeSlugInput(slugInput.value);
     const tags = tagInput ? tagInput.getTags() : [];
+    const expires = expiresPicker ? expiresPicker.getValue() : "";
     const changed =
-      title !== currentTitle || slug !== currentSlug || !tagsEqual(tags, currentTags);
+      title !== currentTitle ||
+      slug !== currentSlug ||
+      !tagsEqual(tags, currentTags) ||
+      expires !== currentExpires;
     saveMetaBtn.disabled = !changed || !title || !slugOk || savingMeta;
   }
 
@@ -555,6 +724,10 @@ function initUploadPage() {
           scheduleTagSave();
         },
       })
+    : null;
+
+  expiresPicker = expiresPickerEl
+    ? createExpiresPicker(expiresPickerEl, { onChange: () => updateSaveEnabled() })
     : null;
 
   if (slugPrefix) {
@@ -592,10 +765,14 @@ function initUploadPage() {
     const title = titleInput.value.trim();
     const slug = normalizeSlugInput(slugInput.value);
     const tags = tagInput ? tagInput.getTags() : [];
+    const expires = expiresPicker ? expiresPicker.getValue() : "";
     if (!currentSlug || !title || !slugOk || savingMeta) return false;
 
     const changed =
-      title !== currentTitle || slug !== currentSlug || !tagsEqual(tags, currentTags);
+      title !== currentTitle ||
+      slug !== currentSlug ||
+      !tagsEqual(tags, currentTags) ||
+      expires !== currentExpires;
     if (!changed) return true;
 
     savingMeta = true;
@@ -603,13 +780,20 @@ function initUploadPage() {
     if (!quiet) setTagsStatus("Saving…");
 
     try {
-      const result = await updateDashboardMeta(currentSlug, { title, slug, tags });
+      const result = await updateDashboardMeta(currentSlug, {
+        title,
+        slug,
+        tags,
+        expiresAt: expires,
+      });
       currentSlug = result.slug;
       currentTitle = result.title;
       currentTags = Array.isArray(result.tags) ? result.tags : [];
+      currentExpires = expiresDateInputValue(result.expires_at);
       titleInput.value = result.title;
       slugInput.value = result.slug;
       tagInput?.setTags(currentTags);
+      expiresPicker?.setValue(currentExpires);
       refreshPublishedUrl(result.slug);
       slugStatus.textContent = "Saved";
       slugStatus.className = "field-hint ok";
@@ -696,9 +880,11 @@ function initUploadPage() {
       currentSlug = result.slug;
       currentTitle = result.title;
       currentTags = Array.isArray(result.tags) ? result.tags : [];
+      currentExpires = expiresDateInputValue(result.expires_at);
       titleInput.value = result.title;
       slugInput.value = result.slug;
       tagInput?.setTags(currentTags);
+      expiresPicker?.setValue(currentExpires);
       slugOk = true;
       slugStatus.textContent = "Available";
       slugStatus.className = "field-hint ok";
@@ -1013,16 +1199,10 @@ function initLibraryPage() {
       const card = document.createElement("article");
       card.className = "dashboard-card";
       const dateLabel = dashboardDateLabel(d);
+      const expLabel = expiresLabel(d.expires_at);
       const tags = Array.isArray(d.tags) ? d.tags : [];
       const tagsHtml = showArchived ? "" : renderTagChips(tags, { filterable: true });
-      const archiveMenuItem = showArchived
-        ? '<button type="button" class="card-menu-item btn-restore" role="menuitem">Restore</button>'
-        : '<button type="button" class="card-menu-item btn-archive" role="menuitem">Archive</button>';
-
-      card.innerHTML =
-        '<a href="' +
-        d.url +
-        '" target="_blank" rel="noopener" class="card-thumb">' +
+      const thumbInner =
         '<img src="' +
         d.thumb_url +
         "?t=" +
@@ -1030,8 +1210,31 @@ function initLibraryPage() {
         '" alt="' +
         escapeHtml(d.title) +
         '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'">' +
-        '<div class="card-thumb-placeholder" style="display:none">📊</div>' +
-        "</a>" +
+        '<div class="card-thumb-placeholder" style="display:none">📊</div>';
+      const thumbHtml = showArchived
+        ? '<div class="card-thumb">' + thumbInner + "</div>"
+        : '<a href="' +
+          d.url +
+          '" target="_blank" rel="noopener" class="card-thumb">' +
+          thumbInner +
+          "</a>";
+      const primaryAction = showArchived
+        ? '<button type="button" class="btn btn-primary btn-sm btn-unarchive">Unarchive</button>'
+        : '<a href="' +
+          d.url +
+          '" target="_blank" rel="noopener" class="btn btn-primary btn-sm btn-open">Open</a>';
+      const archiveMenuItem = showArchived
+        ? ""
+        : '<button type="button" class="card-menu-item btn-archive" role="menuitem">Archive</button>';
+      const copyMenuItem = showArchived
+        ? ""
+        : '<button type="button" class="card-menu-item btn-copy" role="menuitem">Copy Link</button>';
+      const metaLines =
+        (dateLabel ? '<div class="card-meta-line">' + dateLabel + "</div>" : "") +
+        (expLabel ? '<div class="card-meta-line">' + escapeHtml(expLabel) + "</div>" : "");
+
+      card.innerHTML =
+        thumbHtml +
         '<div class="card-body">' +
         '<div class="card-title">' +
         escapeHtml(d.title) +
@@ -1040,18 +1243,16 @@ function initLibraryPage() {
         escapeHtml(d.slug) +
         "</div>" +
         '<div class="card-meta">' +
-        (dateLabel ? '<div class="card-meta-line">' + dateLabel + "</div>" : "") +
+        metaLines +
         "</div>" +
         tagsHtml +
         '<div class="card-actions">' +
-        '<a href="' +
-        d.url +
-        '" target="_blank" rel="noopener" class="btn btn-primary btn-sm btn-open">Open</a>' +
+        primaryAction +
         '<button type="button" class="btn btn-secondary btn-sm btn-edit">Edit</button>' +
         '<div class="card-menu">' +
         '<button type="button" class="btn btn-ghost btn-sm btn-menu" aria-haspopup="true" aria-expanded="false" aria-label="More actions">⋯</button>' +
         '<div class="card-menu-dropdown" role="menu">' +
-        '<button type="button" class="card-menu-item btn-copy" role="menuitem">Copy Link</button>' +
+        copyMenuItem +
         '<a href="/api/dashboards/' +
         d.slug +
         '/download" class="card-menu-item" role="menuitem">Download</a>' +
@@ -1074,6 +1275,9 @@ function initLibraryPage() {
         '<span class="field-hint edit-slug-status"></span></label>' +
         '<div class="field"><span class="field-label">Tags</span>' +
         '<div class="edit-tags tag-input" data-placeholder="Add a tag"></div></div>' +
+        '<div class="field"><span class="field-label">Expires</span>' +
+        '<div class="edit-expires-picker expires-picker"></div>' +
+        '<span class="field-hint">Optional · archives automatically after this date</span></div>' +
         '<div class="edit-actions">' +
         '<button type="button" class="btn btn-primary btn-sm btn-save-edit" disabled>Save</button>' +
         '<button type="button" class="btn btn-secondary btn-sm btn-cancel-edit">Cancel</button>' +
@@ -1082,6 +1286,7 @@ function initLibraryPage() {
       let cardSlug = d.slug;
       let cardTitle = d.title;
       let cardTags = tags.slice();
+      let cardExpires = expiresDateInputValue(d.expires_at);
       let cardSlugOk = true;
       const editPanel = card.querySelector(".edit-panel");
       const titleField = card.querySelector(".edit-title");
@@ -1089,6 +1294,7 @@ function initLibraryPage() {
       const slugStatus = card.querySelector(".edit-slug-status");
       const saveEditBtn = card.querySelector(".btn-save-edit");
       const tagsField = card.querySelector(".edit-tags");
+      const expiresPickerField = card.querySelector(".edit-expires-picker");
       const menuBtn = card.querySelector(".btn-menu");
       const menuDropdown = card.querySelector(".card-menu-dropdown");
 
@@ -1097,12 +1303,21 @@ function initLibraryPage() {
       });
       cardTagInput.setTags(cardTags);
 
+      const cardExpiresPicker = createExpiresPicker(expiresPickerField, {
+        onChange: () => updateCardSaveEnabled(),
+      });
+      cardExpiresPicker.setValue(cardExpires);
+
       function updateCardSaveEnabled() {
         const title = titleField.value.trim();
         const slug = normalizeSlugInput(slugField.value);
         const nextTags = cardTagInput.getTags();
+        const nextExpires = cardExpiresPicker.getValue();
         const changed =
-          title !== cardTitle || slug !== cardSlug || !tagsEqual(nextTags, cardTags);
+          title !== cardTitle ||
+          slug !== cardSlug ||
+          !tagsEqual(nextTags, cardTags) ||
+          nextExpires !== cardExpires;
         saveEditBtn.disabled = !changed || !title || !cardSlugOk;
       }
 
@@ -1144,6 +1359,7 @@ function initLibraryPage() {
         titleField.value = cardTitle;
         slugField.value = cardSlug;
         cardTagInput.setTags(cardTags);
+        cardExpiresPicker.setValue(cardExpires);
         cardSlugOk = true;
         slugStatus.textContent = "";
         slugStatus.className = "field-hint edit-slug-status";
@@ -1156,16 +1372,23 @@ function initLibraryPage() {
         titleField.value = cardTitle;
         slugField.value = cardSlug;
         cardTagInput.setTags(cardTags);
+        cardExpiresPicker.setValue(cardExpires);
       });
 
       saveEditBtn.addEventListener("click", async () => {
         const title = titleField.value.trim();
         const slug = normalizeSlugInput(slugField.value);
         const nextTags = cardTagInput.getTags();
+        const nextExpires = cardExpiresPicker.getValue();
         if (!title || !cardSlugOk) return;
         saveEditBtn.disabled = true;
         try {
-          await updateDashboardMeta(cardSlug, { title, slug, tags: nextTags });
+          await updateDashboardMeta(cardSlug, {
+            title,
+            slug,
+            tags: nextTags,
+            expiresAt: nextExpires,
+          });
           showToast("Dashboard updated");
           await loadAndRender();
         } catch (e) {
@@ -1175,10 +1398,13 @@ function initLibraryPage() {
         }
       });
 
-      card.querySelector(".btn-copy").addEventListener("click", () => {
-        closeAllMenus();
-        copyToClipboard(window.location.origin + "/d/" + cardSlug);
-      });
+      const copyBtn = card.querySelector(".btn-copy");
+      if (copyBtn) {
+        copyBtn.addEventListener("click", () => {
+          closeAllMenus();
+          copyToClipboard(window.location.origin + "/d/" + cardSlug);
+        });
+      }
 
       card.querySelector(".btn-replace").addEventListener("click", () => {
         closeAllMenus();
@@ -1193,7 +1419,9 @@ function initLibraryPage() {
           closeAllMenus();
           if (
             !confirm(
-              'Archive "' + d.title + '"? It will be hidden from the library. You can restore it later.'
+              'Archive "' +
+                d.title +
+                '"? It will be hidden from the library and its live URL will stop working. You can unarchive it later.'
             )
           ) {
             return;
@@ -1208,17 +1436,21 @@ function initLibraryPage() {
         });
       }
 
-      const restoreBtn = card.querySelector(".btn-restore");
-      if (restoreBtn) {
-        restoreBtn.addEventListener("click", async () => {
+      async function unarchiveDashboard() {
+        try {
+          await setDashboardArchived(d.slug, false);
+          showToast("Dashboard unarchived");
+          await loadAndRender();
+        } catch (e) {
+          showToast(e.message, "error");
+        }
+      }
+
+      const unarchiveBtn = card.querySelector(".btn-unarchive");
+      if (unarchiveBtn) {
+        unarchiveBtn.addEventListener("click", async () => {
           closeAllMenus();
-          try {
-            await setDashboardArchived(d.slug, false);
-            showToast("Dashboard restored");
-            await loadAndRender();
-          } catch (e) {
-            showToast(e.message, "error");
-          }
+          await unarchiveDashboard();
         });
       }
 

@@ -577,6 +577,71 @@ main {
   font-size: 0.85rem;
 }
 
+.field input[type="date"] {
+  width: 100%;
+  max-width: 16rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  color-scheme: light dark;
+}
+
+.field input[type="date"]:focus {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.expires-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.expires-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.expires-preset {
+  height: 32px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.expires-preset:hover {
+  color: var(--text);
+  background: var(--bg-subtle);
+}
+
+.expires-preset.active {
+  color: var(--accent);
+  border-color: transparent;
+  background: var(--accent-soft);
+}
+
+.expires-custom {
+  display: none;
+}
+
+.expires-custom.visible {
+  display: block;
+}
+
 .field-hint {
   font-size: 0.78rem;
   color: var(--text-muted);

@@ -27,11 +27,12 @@ func New(store *storage.Store, cfg config.Config, static fs.FS) *Handler {
 }
 
 type uploadResponse struct {
-	Slug     string   `json:"slug"`
-	URL      string   `json:"url"`
-	Title    string   `json:"title"`
-	Tags     []string `json:"tags,omitempty"`
-	Archived bool     `json:"archived,omitempty"`
+	Slug      string     `json:"slug"`
+	URL       string     `json:"url"`
+	Title     string     `json:"title"`
+	Tags      []string   `json:"tags,omitempty"`
+	Archived  bool       `json:"archived,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 type errorResponse struct {
@@ -87,11 +88,12 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusCreated, uploadResponse{
-		Slug:     entry.Slug,
-		URL:      h.absoluteURL(r, entry.URL),
-		Title:    entry.Title,
-		Tags:     entry.Tags,
-		Archived: entry.Archived,
+		Slug:      entry.Slug,
+		URL:       h.absoluteURL(r, entry.URL),
+		Title:     entry.Title,
+		Tags:      entry.Tags,
+		Archived:  entry.Archived,
+		ExpiresAt: entry.ExpiresAt,
 	})
 }
 
@@ -134,11 +136,12 @@ func (h *Handler) HandleReplace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, uploadResponse{
-		Slug:     entry.Slug,
-		URL:      h.absoluteURL(r, entry.URL),
-		Title:    entry.Title,
-		Tags:     entry.Tags,
-		Archived: entry.Archived,
+		Slug:      entry.Slug,
+		URL:       h.absoluteURL(r, entry.URL),
+		Title:     entry.Title,
+		Tags:      entry.Tags,
+		Archived:  entry.Archived,
+		ExpiresAt: entry.ExpiresAt,
 	})
 }
 
@@ -312,10 +315,11 @@ func (h *Handler) HandleSlugCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateMetaRequest struct {
-	Title    string    `json:"title"`
-	Slug     string    `json:"slug"`
-	Tags     *[]string `json:"tags"`
-	Archived *bool     `json:"archived"`
+	Title     string    `json:"title"`
+	Slug      string    `json:"slug"`
+	Tags      *[]string `json:"tags"`
+	Archived  *bool     `json:"archived"`
+	ExpiresAt *string   `json:"expires_at"`
 }
 
 func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
@@ -342,14 +346,25 @@ func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 		tags = *req.Tags
 	}
 
-	archiveOnly := req.Archived != nil && req.Title == "" && req.Slug == "" && !updateTags
+	var expiresAt *time.Time
+	updateExpires := req.ExpiresAt != nil
+	if updateExpires {
+		parsed, err := storage.ParseExpiresAt(*req.ExpiresAt)
+		if err != nil {
+			h.writeError(w, http.StatusBadRequest, "invalid expiration date (use YYYY-MM-DD or RFC3339)")
+			return
+		}
+		expiresAt = parsed
+	}
+
+	archiveOnly := req.Archived != nil && req.Title == "" && req.Slug == "" && !updateTags && !updateExpires
 
 	var entry storage.DashboardEntry
 	var err error
 	if archiveOnly {
 		entry, err = h.store.SetArchived(currentSlug, *req.Archived)
 	} else {
-		entry, err = h.store.UpdateMeta(currentSlug, req.Slug, req.Title, tags, updateTags)
+		entry, err = h.store.UpdateMeta(currentSlug, req.Slug, req.Title, tags, updateTags, expiresAt, updateExpires)
 		if err == nil && req.Archived != nil {
 			entry, err = h.store.SetArchived(entry.Slug, *req.Archived)
 		}
@@ -366,6 +381,8 @@ func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusBadRequest, "title is required")
 		case errors.Is(err, storage.ErrInvalidTags):
 			h.writeError(w, http.StatusBadRequest, "invalid tags (max 10, each up to 32 chars: letters, numbers, hyphens, underscores)")
+		case errors.Is(err, storage.ErrInvalidExpires):
+			h.writeError(w, http.StatusBadRequest, "invalid expiration date")
 		default:
 			h.writeError(w, http.StatusInternalServerError, "failed to update dashboard")
 		}
@@ -373,11 +390,12 @@ func (h *Handler) HandleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, uploadResponse{
-		Slug:     entry.Slug,
-		URL:      h.absoluteURL(r, entry.URL),
-		Title:    entry.Title,
-		Tags:     entry.Tags,
-		Archived: entry.Archived,
+		Slug:      entry.Slug,
+		URL:       h.absoluteURL(r, entry.URL),
+		Title:     entry.Title,
+		Tags:      entry.Tags,
+		Archived:  entry.Archived,
+		ExpiresAt: entry.ExpiresAt,
 	})
 }
 
@@ -499,9 +517,9 @@ func (h *Handler) HandleServe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	htmlPath, err := h.store.HTMLPath(slug)
+	htmlPath, err := h.store.AccessibleHTMLPath(slug)
 	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
+		if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrArchived) {
 			http.NotFound(w, r)
 			return
 		}

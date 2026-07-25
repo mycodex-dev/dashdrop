@@ -21,7 +21,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/style.css?v=17">
+  <link rel="stylesheet" href="/css/style.css?v=21">
   <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js" defer></script>
 </head>
 <body>
@@ -91,6 +91,11 @@
           <div id="edit-tags" class="tag-input" data-placeholder="Add a tag and press Enter"></div>
           <span id="tags-status" class="field-hint">Optional · saved as you add them · max 10</span>
         </div>
+        <div class="field">
+          <span class="field-label">Expires</span>
+          <div id="edit-expires-picker" class="expires-picker"></div>
+          <span class="field-hint">Optional · archives automatically after this date</span>
+        </div>
         <button id="btn-save-meta" type="button" class="btn btn-primary btn-sm" disabled>Save changes</button>
       </div>
 
@@ -107,6 +112,6 @@
   </main>
 
   <iframe id="thumb-frame" title="Thumbnail capture frame" sandbox="allow-same-origin"></iframe>
-  <script src="/js/app.js?v=17"></script>
+  <script src="/js/app.js?v=21"></script>
 </body>
 </html>

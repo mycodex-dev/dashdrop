@@ -26,6 +26,8 @@ var ErrInvalidSlug = errors.New("invalid slug")
 var ErrSlugTaken = errors.New("slug already taken")
 var ErrInvalidTitle = errors.New("invalid title")
 var ErrInvalidTags = errors.New("invalid tags")
+var ErrInvalidExpires = errors.New("invalid expiration date")
+var ErrArchived = errors.New("dashboard archived")
 var ErrTooLarge = errors.New("file exceeds maximum size")
 
 var reservedSlugs = map[string]bool{
@@ -35,25 +37,27 @@ var reservedSlugs = map[string]bool{
 }
 
 type DashboardMeta struct {
-	Slug             string    `json:"slug"`
-	Title            string    `json:"title"`
-	Tags             []string  `json:"tags,omitempty"`
-	Archived         bool      `json:"archived,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
-	OriginalFilename string    `json:"original_filename"`
-	SizeBytes        int64     `json:"size_bytes"`
+	Slug             string     `json:"slug"`
+	Title            string     `json:"title"`
+	Tags             []string   `json:"tags,omitempty"`
+	Archived         bool       `json:"archived,omitempty"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	OriginalFilename string     `json:"original_filename"`
+	SizeBytes        int64      `json:"size_bytes"`
 }
 
 type DashboardEntry struct {
-	Slug      string    `json:"slug"`
-	Title     string    `json:"title"`
-	Tags      []string  `json:"tags,omitempty"`
-	Archived  bool      `json:"archived,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	ThumbURL  string    `json:"thumb_url"`
-	URL       string    `json:"url"`
+	Slug      string     `json:"slug"`
+	Title     string     `json:"title"`
+	Tags      []string   `json:"tags,omitempty"`
+	Archived  bool       `json:"archived,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	ThumbURL  string     `json:"thumb_url"`
+	URL       string     `json:"url"`
 }
 
 // MarshalJSON omits zero updated_at values (time.Time omitempty is unreliable).
@@ -63,6 +67,7 @@ func (e DashboardEntry) MarshalJSON() ([]byte, error) {
 		Title     string     `json:"title"`
 		Tags      []string   `json:"tags,omitempty"`
 		Archived  bool       `json:"archived,omitempty"`
+		ExpiresAt *time.Time `json:"expires_at,omitempty"`
 		CreatedAt time.Time  `json:"created_at"`
 		UpdatedAt *time.Time `json:"updated_at,omitempty"`
 		ThumbURL  string     `json:"thumb_url"`
@@ -73,6 +78,7 @@ func (e DashboardEntry) MarshalJSON() ([]byte, error) {
 		Title:     e.Title,
 		Tags:      e.Tags,
 		Archived:  e.Archived,
+		ExpiresAt: copyTimePtr(e.ExpiresAt),
 		CreatedAt: e.CreatedAt,
 		ThumbURL:  e.ThumbURL,
 		URL:       e.URL,
@@ -202,12 +208,43 @@ func copyTags(tags []string) []string {
 	return out
 }
 
+func copyTimePtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	v := t.UTC()
+	return &v
+}
+
+// ParseExpiresAt accepts RFC3339 or YYYY-MM-DD (end of that UTC day).
+// Empty string clears the expiration (returns nil, nil).
+func ParseExpiresAt(raw string) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		utc := t.UTC()
+		return &utc, nil
+	}
+	if t, err := time.ParseInLocation("2006-01-02", raw, time.UTC); err == nil {
+		end := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, time.UTC)
+		return &end, nil
+	}
+	return nil, ErrInvalidExpires
+}
+
+func isExpired(expiresAt *time.Time, now time.Time) bool {
+	return expiresAt != nil && !expiresAt.After(now)
+}
+
 func entryFromMeta(meta DashboardMeta) DashboardEntry {
 	return DashboardEntry{
 		Slug:      meta.Slug,
 		Title:     meta.Title,
 		Tags:      copyTags(meta.Tags),
 		Archived:  meta.Archived,
+		ExpiresAt: copyTimePtr(meta.ExpiresAt),
 		CreatedAt: meta.CreatedAt,
 		UpdatedAt: meta.UpdatedAt,
 		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", meta.Slug),
@@ -270,7 +307,7 @@ func (s *Store) SlugAvailable(slug string, exceptSlug string) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) UpdateMeta(currentSlug, newSlug, title string, tags []string, updateTags bool) (DashboardEntry, error) {
+func (s *Store) UpdateMeta(currentSlug, newSlug, title string, tags []string, updateTags bool, expiresAt *time.Time, updateExpires bool) (DashboardEntry, error) {
 	currentSlug = NormalizeSlug(currentSlug)
 	newSlug = NormalizeSlug(newSlug)
 	if !ValidSlug(currentSlug) {
@@ -329,11 +366,22 @@ func (s *Store) UpdateMeta(currentSlug, newSlug, title string, tags []string, up
 	}
 
 	now := time.Now().UTC()
+	nextExpires := copyTimePtr(existing.ExpiresAt)
+	if updateExpires {
+		nextExpires = copyTimePtr(expiresAt)
+	}
+
+	archived := existing.Archived
+	if !archived && isExpired(nextExpires, now) {
+		archived = true
+	}
+
 	meta := DashboardMeta{
 		Slug:             newSlug,
 		Title:            title,
 		Tags:             normalizedTags,
-		Archived:         existing.Archived,
+		Archived:         archived,
+		ExpiresAt:        nextExpires,
 		CreatedAt:        existing.CreatedAt,
 		UpdatedAt:        now,
 		OriginalFilename: existing.OriginalFilename,
@@ -397,6 +445,11 @@ func (s *Store) SetArchived(slug string, archived bool) (DashboardEntry, error) 
 	meta := existing
 	meta.Archived = archived
 	meta.UpdatedAt = now
+	// Unarchiving an already-expired dashboard clears the date so it does not
+	// immediately re-archive on the next list.
+	if !archived && isExpired(meta.ExpiresAt, now) {
+		meta.ExpiresAt = nil
+	}
 	if meta.CreatedAt.IsZero() {
 		meta.CreatedAt = now
 	}
@@ -431,6 +484,39 @@ func (s *Store) SetArchived(slug string, archived bool) (DashboardEntry, error) 
 	}
 
 	return entry, nil
+}
+
+// archiveExpiredUnlocked marks expired active dashboards as archived and
+// persists meta + manifest. Caller must hold s.mu.
+func (s *Store) archiveExpiredUnlocked(entries []DashboardEntry) ([]DashboardEntry, error) {
+	now := time.Now().UTC()
+	changed := false
+	for i, e := range entries {
+		if e.Archived || !isExpired(e.ExpiresAt, now) {
+			continue
+		}
+		meta, err := s.readMetaUnlocked(e.Slug)
+		if err != nil {
+			continue
+		}
+		meta.Archived = true
+		meta.UpdatedAt = now
+		metaData, err := json.MarshalIndent(meta, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		if err := writeFileAtomic(filepath.Join(s.dashboardDir(e.Slug), "meta.json"), metaData, 0o644); err != nil {
+			return nil, err
+		}
+		entries[i] = entryFromMeta(meta)
+		changed = true
+	}
+	if changed {
+		if err := s.writeManifest(entries); err != nil {
+			return nil, err
+		}
+	}
+	return entries, nil
 }
 
 func titleFromFilename(name string) string {
@@ -482,6 +568,10 @@ func (s *Store) List() ([]DashboardEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	entries, err = s.archiveExpiredUnlocked(entries)
+	if err != nil {
+		return nil, err
+	}
 	return filterByArchived(entries, false), nil
 }
 
@@ -489,6 +579,10 @@ func (s *Store) ListArchived() ([]DashboardEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entries, err := s.readManifest()
+	if err != nil {
+		return nil, err
+	}
+	entries, err = s.archiveExpiredUnlocked(entries)
 	if err != nil {
 		return nil, err
 	}
@@ -643,6 +737,7 @@ func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htm
 		Title:            titleFromFilename(originalFilename),
 		Tags:             copyTags(existing.Tags),
 		Archived:         existing.Archived,
+		ExpiresAt:        copyTimePtr(existing.ExpiresAt),
 		CreatedAt:        existing.CreatedAt,
 		UpdatedAt:        now,
 		OriginalFilename: originalFilename,
@@ -650,6 +745,9 @@ func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htm
 	}
 	if meta.CreatedAt.IsZero() {
 		meta.CreatedAt = now
+	}
+	if !meta.Archived && isExpired(meta.ExpiresAt, now) {
+		meta.Archived = true
 	}
 	metaData, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -748,6 +846,60 @@ func (s *Store) HTMLPath(slug string) (string, error) {
 	if !ValidSlug(slug) {
 		return "", ErrInvalidSlug
 	}
+	path := filepath.Join(s.dashboardDir(slug), "index.html")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return "", ErrNotFound
+	}
+	return path, nil
+}
+
+// AccessibleHTMLPath returns the HTML path only for active (non-archived) dashboards.
+// Expired dashboards are archived first, then treated as inaccessible.
+func (s *Store) AccessibleHTMLPath(slug string) (string, error) {
+	slug = NormalizeSlug(slug)
+	if !ValidSlug(slug) {
+		return "", ErrInvalidSlug
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	meta, err := s.readMetaUnlocked(slug)
+	if err != nil {
+		return "", err
+	}
+
+	now := time.Now().UTC()
+	if !meta.Archived && isExpired(meta.ExpiresAt, now) {
+		meta.Archived = true
+		meta.UpdatedAt = now
+		metaData, err := json.MarshalIndent(meta, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		if err := writeFileAtomic(filepath.Join(s.dashboardDir(slug), "meta.json"), metaData, 0o644); err != nil {
+			return "", err
+		}
+		entry := entryFromMeta(meta)
+		entries, err := s.readManifest()
+		if err != nil {
+			return "", err
+		}
+		for i, e := range entries {
+			if e.Slug == slug {
+				entries[i] = entry
+				break
+			}
+		}
+		if err := s.writeManifest(entries); err != nil {
+			return "", err
+		}
+	}
+
+	if meta.Archived {
+		return "", ErrArchived
+	}
+
 	path := filepath.Join(s.dashboardDir(slug), "index.html")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", ErrNotFound

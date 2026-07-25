@@ -51,14 +51,14 @@ Data is stored in `./data` by default when running locally.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/upload` | Upload HTML + thumbnail (`multipart: html`, `thumb`) |
-| `GET` | `/api/dashboards` | List active dashboards (`?tag=` to filter; `?archived=1` for archived only) |
+| `GET` | `/api/dashboards` | List active dashboards (`?tag=` to filter; `?archived=1` for archived only). Expired dashboards are archived automatically. |
 | `GET` | `/api/tags` | List unique tags from active dashboards |
 | `PUT` | `/api/dashboards/{slug}` | Replace dashboard with a new HTML version |
-| `PATCH` | `/api/dashboards/{slug}` | Update title, URL slug, tags, and/or `archived` |
+| `PATCH` | `/api/dashboards/{slug}` | Update title, URL slug, tags, `archived`, and/or `expires_at` (YYYY-MM-DD or RFC3339; empty string clears) |
 | `GET` | `/api/slugs/{slug}` | Check if a slug is available (`?except=` for current slug) |
 | `DELETE` | `/api/dashboards/{slug}` | Delete a dashboard |
 | `GET` | `/api/dashboards/{slug}/download` | Download the HTML file |
-| `GET` | `/d/{slug}` | Serve published HTML |
+| `GET` | `/d/{slug}` | Serve published HTML (404 if archived) |
 | `GET` | `/api/dashboards/{slug}/thumb.png` | Dashboard thumbnail |
 
 ## Security Notes
