@@ -293,13 +293,18 @@ main {
   width: 64px;
   height: 64px;
   margin: 0 auto 1.25rem;
-  background: var(--bg-subtle);
+  background: var(--accent-soft);
   border-radius: 16px;
   display: grid;
   place-items: center;
-  font-size: 1.75rem;
-  border: 1px solid var(--border);
+  color: var(--accent);
+  border: none;
   pointer-events: none;
+}
+
+.dropzone-icon svg {
+  width: 32px;
+  height: 32px;
 }
 
 .dropzone h2 {
