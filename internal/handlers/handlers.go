@@ -73,9 +73,14 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer htmlFile.Close()
 	defer thumbFile.Close()
+	defer cleanupMultipart(r)
 
-	entry, err := h.store.SaveUpload(filename, htmlFile, htmlHeader.Size, thumbFile)
+	entry, err := h.store.SaveUpload(filename, htmlFile, htmlHeader.Size, thumbFile, h.cfg.MaxUploadBytes, h.cfg.MaxThumbBytes)
 	if err != nil {
+		if errors.Is(err, storage.ErrTooLarge) {
+			h.writeError(w, http.StatusBadRequest, "file exceeds maximum size")
+			return
+		}
 		h.writeError(w, http.StatusInternalServerError, "failed to save upload")
 		return
 	}
@@ -106,8 +111,9 @@ func (h *Handler) HandleReplace(w http.ResponseWriter, r *http.Request) {
 	}
 	defer htmlFile.Close()
 	defer thumbFile.Close()
+	defer cleanupMultipart(r)
 
-	entry, err := h.store.ReplaceUpload(slug, filename, htmlFile, htmlHeader.Size, thumbFile)
+	entry, err := h.store.ReplaceUpload(slug, filename, htmlFile, htmlHeader.Size, thumbFile, h.cfg.MaxUploadBytes, h.cfg.MaxThumbBytes)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			h.writeError(w, http.StatusNotFound, "dashboard not found")
@@ -115,6 +121,10 @@ func (h *Handler) HandleReplace(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, storage.ErrInvalidSlug) {
 			h.writeError(w, http.StatusBadRequest, "invalid slug")
+			return
+		}
+		if errors.Is(err, storage.ErrTooLarge) {
+			h.writeError(w, http.StatusBadRequest, "file exceeds maximum size")
 			return
 		}
 		h.writeError(w, http.StatusInternalServerError, "failed to replace upload")
@@ -129,21 +139,38 @@ func (h *Handler) HandleReplace(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func cleanupMultipart(r *http.Request) {
+	if r.MultipartForm != nil {
+		_ = r.MultipartForm.RemoveAll()
+	}
+}
+
 func (h *Handler) parseUploadForm(w http.ResponseWriter, r *http.Request) (string, multipart.File, *multipart.FileHeader, multipart.File, bool) {
-	if err := r.ParseMultipartForm(h.cfg.MaxUploadBytes + 1024*1024); err != nil {
+	maxMemory := h.cfg.MaxUploadBytes + h.cfg.MaxThumbBytes
+	if maxMemory > 32<<20 {
+		maxMemory = 32 << 20
+	}
+	if err := r.ParseMultipartForm(maxMemory); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			h.writeError(w, http.StatusRequestEntityTooLarge, "request too large")
+			return "", nil, nil, nil, false
+		}
 		h.writeError(w, http.StatusBadRequest, "request too large or invalid")
 		return "", nil, nil, nil, false
 	}
 
 	htmlFile, htmlHeader, err := r.FormFile("html")
 	if err != nil {
+		cleanupMultipart(r)
 		h.writeError(w, http.StatusBadRequest, "html file is required")
 		return "", nil, nil, nil, false
 	}
 
-	thumbFile, _, err := r.FormFile("thumb")
+	thumbFile, thumbHeader, err := r.FormFile("thumb")
 	if err != nil {
 		htmlFile.Close()
+		cleanupMultipart(r)
 		h.writeError(w, http.StatusBadRequest, "thumbnail is required")
 		return "", nil, nil, nil, false
 	}
@@ -153,14 +180,24 @@ func (h *Handler) parseUploadForm(w http.ResponseWriter, r *http.Request) (strin
 	if ext != ".html" && ext != ".htm" {
 		htmlFile.Close()
 		thumbFile.Close()
+		cleanupMultipart(r)
 		h.writeError(w, http.StatusBadRequest, "only .html files are allowed")
 		return "", nil, nil, nil, false
 	}
 
-	if htmlHeader.Size > h.cfg.MaxUploadBytes {
+	if htmlHeader.Size < 0 || htmlHeader.Size > h.cfg.MaxUploadBytes {
 		htmlFile.Close()
 		thumbFile.Close()
+		cleanupMultipart(r)
 		h.writeError(w, http.StatusBadRequest, "file exceeds maximum size")
+		return "", nil, nil, nil, false
+	}
+
+	if thumbHeader.Size < 0 || thumbHeader.Size > h.cfg.MaxThumbBytes {
+		htmlFile.Close()
+		thumbFile.Close()
+		cleanupMultipart(r)
+		h.writeError(w, http.StatusBadRequest, "thumbnail exceeds maximum size")
 		return "", nil, nil, nil, false
 	}
 
@@ -170,6 +207,7 @@ func (h *Handler) parseUploadForm(w http.ResponseWriter, r *http.Request) (strin
 		if mediaType != "text/html" && mediaType != "application/octet-stream" {
 			htmlFile.Close()
 			thumbFile.Close()
+			cleanupMultipart(r)
 			h.writeError(w, http.StatusBadRequest, "invalid content type")
 			return "", nil, nil, nil, false
 		}

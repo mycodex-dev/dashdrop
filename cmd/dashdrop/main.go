@@ -31,15 +31,20 @@ func main() {
 
 	h := handlers.New(store, cfg, static)
 	uploadLimiter := middleware.NewRateLimiter(cfg.MaxUploadsPerMin, time.Minute)
+	withUploadGuards := func(next http.Handler) http.Handler {
+		return middleware.UploadRateLimit(uploadLimiter)(
+			middleware.MaxBytes(cfg.MaxUploadRequestBytes())(next),
+		)
+	}
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/config", h.HandleConfig)
-	mux.Handle("POST /api/upload", middleware.UploadRateLimit(uploadLimiter)(http.HandlerFunc(h.HandleUpload)))
+	mux.Handle("POST /api/upload", withUploadGuards(http.HandlerFunc(h.HandleUpload)))
 	mux.HandleFunc("GET /api/dashboards", h.HandleList)
 	mux.HandleFunc("GET /api/tags", h.HandleTags)
 	mux.HandleFunc("GET /api/slugs/{slug}", h.HandleSlugCheck)
-	mux.Handle("PUT /api/dashboards/{slug}", middleware.UploadRateLimit(uploadLimiter)(http.HandlerFunc(h.HandleReplace)))
+	mux.Handle("PUT /api/dashboards/{slug}", withUploadGuards(http.HandlerFunc(h.HandleReplace)))
 	mux.HandleFunc("PATCH /api/dashboards/{slug}", h.HandleUpdateMeta)
 	mux.HandleFunc("DELETE /api/dashboards/{slug}", h.HandleDelete)
 	mux.HandleFunc("GET /api/dashboards/{slug}/download", h.HandleDownload)

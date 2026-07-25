@@ -32,6 +32,7 @@ Set via environment variables (see [`.env.example`](.env.example)):
 | `PORT` | `8080` | HTTP listen port |
 | `DATA_DIR` | `/data` | Storage root (use a volume mount) |
 | `MAX_UPLOAD_BYTES` | `5242880` | Max HTML file size (5 MB) |
+| `MAX_THUMB_BYTES` | `1048576` | Max thumbnail size (1 MB) |
 | `BASE_URL` | _(empty)_ | Optional absolute URL for copy-link (e.g. `https://dash.example.com`) |
 | `MAX_UPLOADS_PER_MIN` | `10` | Rate limit per IP |
 

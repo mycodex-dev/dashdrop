@@ -26,6 +26,7 @@ var ErrInvalidSlug = errors.New("invalid slug")
 var ErrSlugTaken = errors.New("slug already taken")
 var ErrInvalidTitle = errors.New("invalid title")
 var ErrInvalidTags = errors.New("invalid tags")
+var ErrTooLarge = errors.New("file exceeds maximum size")
 
 var reservedSlugs = map[string]bool{
 	"api": true, "library": true, "css": true, "js": true, "d": true,
@@ -445,7 +446,7 @@ func (s *Store) ListTags() ([]string, error) {
 	return tags, nil
 }
 
-func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int64, thumb io.Reader) (DashboardEntry, error) {
+func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int64, thumb io.Reader, maxHTML, maxThumb int64) (DashboardEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -460,14 +461,20 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 	}
 
 	htmlPath := filepath.Join(dir, "index.html")
-	if err := writeStreamAtomic(htmlPath, html, 0o644); err != nil {
+	if err := writeStreamAtomic(htmlPath, html, 0o644, maxHTML); err != nil {
 		os.RemoveAll(dir)
+		if errors.Is(err, ErrTooLarge) {
+			return DashboardEntry{}, err
+		}
 		return DashboardEntry{}, fmt.Errorf("write html: %w", err)
 	}
 
 	thumbPath := filepath.Join(dir, "thumb.png")
-	if err := writeStreamAtomic(thumbPath, thumb, 0o644); err != nil {
+	if err := writeStreamAtomic(thumbPath, thumb, 0o644, maxThumb); err != nil {
 		os.RemoveAll(dir)
+		if errors.Is(err, ErrTooLarge) {
+			return DashboardEntry{}, err
+		}
 		return DashboardEntry{}, fmt.Errorf("write thumb: %w", err)
 	}
 
@@ -507,7 +514,7 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 	return entry, nil
 }
 
-func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htmlSize int64, thumb io.Reader) (DashboardEntry, error) {
+func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htmlSize int64, thumb io.Reader, maxHTML, maxThumb int64) (DashboardEntry, error) {
 	if !ValidSlug(slug) {
 		return DashboardEntry{}, ErrInvalidSlug
 	}
@@ -526,12 +533,18 @@ func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htm
 	}
 
 	htmlPath := filepath.Join(dir, "index.html")
-	if err := writeStreamAtomic(htmlPath, html, 0o644); err != nil {
+	if err := writeStreamAtomic(htmlPath, html, 0o644, maxHTML); err != nil {
+		if errors.Is(err, ErrTooLarge) {
+			return DashboardEntry{}, err
+		}
 		return DashboardEntry{}, fmt.Errorf("write html: %w", err)
 	}
 
 	thumbPath := filepath.Join(dir, "thumb.png")
-	if err := writeStreamAtomic(thumbPath, thumb, 0o644); err != nil {
+	if err := writeStreamAtomic(thumbPath, thumb, 0o644, maxThumb); err != nil {
+		if errors.Is(err, ErrTooLarge) {
+			return DashboardEntry{}, err
+		}
 		return DashboardEntry{}, fmt.Errorf("write thumb: %w", err)
 	}
 
@@ -689,7 +702,7 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmpName, path)
 }
 
-func writeStreamAtomic(path string, r io.Reader, perm os.FileMode) error {
+func writeStreamAtomic(path string, r io.Reader, perm os.FileMode, maxBytes int64) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -701,9 +714,18 @@ func writeStreamAtomic(path string, r io.Reader, perm os.FileMode) error {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	if _, err := io.Copy(tmp, r); err != nil {
+	reader := r
+	if maxBytes > 0 {
+		reader = &io.LimitedReader{R: r, N: maxBytes + 1}
+	}
+	written, err := io.Copy(tmp, reader)
+	if err != nil {
 		tmp.Close()
 		return err
+	}
+	if maxBytes > 0 && written > maxBytes {
+		tmp.Close()
+		return ErrTooLarge
 	}
 	if err := tmp.Chmod(perm); err != nil {
 		tmp.Close()

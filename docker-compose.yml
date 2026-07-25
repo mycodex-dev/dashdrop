@@ -9,4 +9,5 @@ services:
       - PORT=8080
       - DATA_DIR=/data
       - MAX_UPLOAD_BYTES=5242880
+      - MAX_THUMB_BYTES=1048576
     restart: unless-stopped
