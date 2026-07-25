@@ -1102,13 +1102,21 @@ main {
 .card-tags {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 0.4rem;
+  min-height: 1.375rem; /* reserve one chip row so cards without tags match */
   margin: 0 0 calc(var(--space) * 2.25);
 }
 
 .dashboard-grid.view-list .card-tags {
   grid-area: tags;
+  min-height: 0;
   margin: 2px 0 0;
+}
+
+.dashboard-grid.view-list .card-tags:empty {
+  display: none;
+  margin: 0;
 }
 
 .tag-chip {

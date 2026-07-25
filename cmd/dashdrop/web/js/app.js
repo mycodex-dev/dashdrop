@@ -325,10 +325,10 @@ function tagsEqual(a, b) {
 }
 
   function renderTagChips(tags, { filterable } = {}) {
-  if (!tags || tags.length === 0) return "";
+  const list = Array.isArray(tags) ? tags : [];
   return (
     '<div class="card-tags">' +
-    tags
+    list
       .map((tag) => {
         const label = escapeHtml(tag);
         if (filterable) {
