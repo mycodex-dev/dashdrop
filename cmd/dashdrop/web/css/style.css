@@ -2,11 +2,14 @@
    Design tokens — Linear / Vercel / GitHub inspired
    8px spacing base · subtle elevation · typography-led hierarchy
    ============================================================================= */
-:root {
+:root,
+[data-theme="light"] {
+  color-scheme: light;
   --bg: #f3f5f7;
   --bg-elevated: #ffffff;
   --bg-subtle: #f7f9fb;
   --bg-card: #f7f9fb;
+  --header-bg: rgba(255, 255, 255, 0.78);
   --border: rgba(15, 35, 55, 0.08);
   --border-hover: rgba(15, 35, 55, 0.14);
   --text: #0f2337;
@@ -14,9 +17,17 @@
   --accent: #0f766e;
   --accent-hover: #0d9488;
   --accent-soft: rgba(15, 118, 110, 0.08);
+  --accent-glow: rgba(15, 118, 110, 0.18);
+  --card-hover-border: rgba(15, 118, 110, 0.28);
   --success: #15803d;
   --danger: #dc2626;
+  --danger-text: #b91c1c;
   --danger-soft: rgba(220, 38, 38, 0.06);
+  --chip-bg: rgba(15, 35, 55, 0.06);
+  --chip-bg-hover: rgba(15, 35, 55, 0.1);
+  --tag-bg: rgba(15, 35, 55, 0.05);
+  --tag-bg-hover: rgba(15, 35, 55, 0.09);
+  --grid-line: rgba(15, 35, 55, 0.016);
   --radius-sm: 8px;   /* pills / tags */
   --radius: 10px;     /* controls */
   --radius-lg: 12px;  /* cards */
@@ -28,6 +39,39 @@
   --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "SF Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
   --focus-ring: 0 0 0 3px rgba(15, 118, 110, 0.18);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7c8d' d='M3 4.5L6 8l3-3.5'/%3E%3C/svg%3E");
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c1015;
+  --bg-elevated: #151a21;
+  --bg-subtle: #1a212b;
+  --bg-card: #1a212b;
+  --header-bg: rgba(12, 16, 21, 0.82);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.14);
+  --text: #e8eef4;
+  --text-muted: #8b9aab;
+  --accent: #14b8a6;
+  --accent-hover: #2dd4bf;
+  --accent-soft: rgba(20, 184, 166, 0.14);
+  --accent-glow: rgba(20, 184, 166, 0.22);
+  --card-hover-border: rgba(45, 212, 191, 0.35);
+  --success: #22c55e;
+  --danger: #f87171;
+  --danger-text: #fca5a5;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --chip-bg: rgba(255, 255, 255, 0.06);
+  --chip-bg-hover: rgba(255, 255, 255, 0.1);
+  --tag-bg: rgba(255, 255, 255, 0.06);
+  --tag-bg-hover: rgba(255, 255, 255, 0.1);
+  --grid-line: rgba(255, 255, 255, 0.035);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.32), 0 16px 40px rgba(0, 0, 0, 0.36);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.18);
+  --focus-ring: 0 0 0 3px rgba(20, 184, 166, 0.28);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b9aab' d='M3 4.5L6 8l3-3.5'/%3E%3C/svg%3E");
 }
 
 *,
@@ -51,14 +95,15 @@ body {
   font-family: var(--font);
   background-color: var(--bg);
   background-image:
-    linear-gradient(rgba(15, 35, 55, 0.016) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 35, 55, 0.016) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 48px 48px;
   background-attachment: fixed;
   color: var(--text);
   min-height: 100dvh;
   line-height: 1.5;
   overflow-x: hidden;
+  transition: background-color var(--transition), color var(--transition);
 }
 
 a {
@@ -88,7 +133,7 @@ a:hover {
   padding: calc(var(--space) * 2) clamp(1rem, 4vw, 2.5rem);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px);
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--header-bg);
 }
 
 .logo {
@@ -115,6 +160,12 @@ a:hover {
   font-size: 1rem;
 }
 
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .nav-link {
   color: var(--text-muted);
   font-size: 0.9rem;
@@ -126,6 +177,58 @@ a:hover {
 .nav-link:hover {
   color: var(--text);
   background: var(--bg-subtle);
+}
+
+/* Theme toggle */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--bg-subtle);
+}
+
+.theme-toggle:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.theme-toggle .icon-sun {
+  display: none;
+}
+
+.theme-toggle .icon-moon {
+  display: block;
+}
+
+[data-theme="dark"] .theme-toggle .icon-sun {
+  display: block;
+}
+
+[data-theme="dark"] .theme-toggle .icon-moon {
+  display: none;
 }
 
 /* =============================================================================
@@ -183,7 +286,7 @@ main {
 .dropzone.dragover {
   border-color: var(--accent);
   background: var(--accent-soft);
-  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.1);
+  box-shadow: 0 0 0 4px var(--accent-glow);
 }
 
 .dropzone-icon {
@@ -286,7 +389,7 @@ main {
 
 .btn-danger:hover {
   background: var(--danger-soft);
-  color: #b91c1c;
+  color: var(--danger-text);
 }
 
 .btn-ghost {
@@ -558,7 +661,7 @@ main {
   display: none;
   background: var(--danger-soft);
   border: 1px solid rgba(220, 38, 38, 0.2);
-  color: #b91c1c;
+  color: var(--danger-text);
   padding: 0.75rem 1rem;
   border-radius: var(--radius);
   margin-bottom: 1rem;
@@ -696,7 +799,7 @@ main {
   outline: none;
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7c8d' d='M3 4.5L6 8l3-3.5'/%3E%3C/svg%3E");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right 0.65rem center;
   transition: background-color var(--transition);
@@ -783,7 +886,7 @@ main {
   font-family: inherit;
   line-height: 1.5;
   color: var(--text);
-  background: rgba(15, 35, 55, 0.06);
+  background: var(--chip-bg);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -791,7 +894,7 @@ main {
 }
 
 .tag-filter-chip:hover {
-  background: rgba(15, 35, 55, 0.1);
+  background: var(--chip-bg-hover);
   color: var(--text);
 }
 
@@ -860,7 +963,7 @@ main {
 }
 
 .dashboard-card:hover {
-  border-color: rgba(15, 118, 110, 0.28);
+  border-color: var(--card-hover-border);
   transform: translateY(-4px);
   box-shadow: var(--shadow-hover);
 }
@@ -1016,7 +1119,7 @@ main {
   font-size: 0.6875rem;
   font-weight: 500;
   color: var(--text-muted);
-  background: rgba(15, 35, 55, 0.05);
+  background: var(--tag-bg);
   border: none;
   border-radius: var(--radius-sm);
   line-height: 1.4;
@@ -1029,7 +1132,7 @@ button.tag-chip-btn,
   font-size: 0.6875rem;
   font-weight: 500;
   color: var(--text-muted);
-  background: rgba(15, 35, 55, 0.05);
+  background: var(--tag-bg);
   border: none;
   border-radius: var(--radius-sm);
   padding: 0.15rem 0.5rem;
@@ -1037,7 +1140,7 @@ button.tag-chip-btn,
 }
 
 .tag-chip-btn:hover {
-  background: rgba(15, 35, 55, 0.09);
+  background: var(--tag-bg-hover);
   color: var(--text);
   filter: brightness(0.98);
 }
@@ -1061,7 +1164,7 @@ button.tag-chip-btn,
 }
 
 .tag-chip-remove:hover {
-  background: rgba(15, 35, 55, 0.1);
+  background: var(--chip-bg-hover);
   color: var(--text);
 }
 
@@ -1230,7 +1333,7 @@ button.tag-chip-btn,
 
 .card-menu-item.danger:hover {
   background: var(--danger-soft);
-  color: #b91c1c;
+  color: var(--danger-text);
 }
 
 .card-menu-divider {
