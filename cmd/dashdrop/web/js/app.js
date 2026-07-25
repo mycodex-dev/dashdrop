@@ -46,11 +46,15 @@ function isValidTimestamp(dateStr) {
 }
 
 function dashboardDateLabel(d) {
-  if (isValidTimestamp(d.updated_at) && d.updated_at !== d.created_at) {
+  if (isValidTimestamp(d.updated_at)) {
     const label = timeAgo(d.updated_at);
-    return label ? "Updated " + label : timeAgo(d.created_at);
+    return label ? "Updated " + label : "";
   }
-  return timeAgo(d.created_at);
+  if (isValidTimestamp(d.created_at)) {
+    const label = timeAgo(d.created_at);
+    return label ? "Updated " + label : "";
+  }
+  return "";
 }
 
 function showToast(message, type = "success") {
@@ -320,15 +324,23 @@ function tagsEqual(a, b) {
   return true;
 }
 
-function renderTagChips(tags, { filterable } = {}) {
+  function renderTagChips(tags, { filterable } = {}) {
   if (!tags || tags.length === 0) return "";
   return (
     '<div class="card-tags">' +
     tags
       .map((tag) => {
-        const cls = filterable ? "tag-chip tag-chip-btn" : "tag-chip";
-        const attr = filterable ? ' data-tag="' + escapeHtml(tag) + '"' : "";
-        return '<span class="' + cls + '"' + attr + ">" + escapeHtml(tag) + "</span>";
+        const label = escapeHtml(tag);
+        if (filterable) {
+          return (
+            '<button type="button" class="tag-chip tag-chip-btn" data-tag="' +
+            label +
+            '">' +
+            label +
+            "</button>"
+          );
+        }
+        return '<span class="tag-chip">' + label + "</span>";
       })
       .join("") +
     "</div>"
@@ -884,10 +896,19 @@ function initLibraryPage() {
     return sortDashboards(list);
   }
 
+  function closeAllMenus(except) {
+    grid.querySelectorAll(".card-menu-dropdown.open").forEach((menu) => {
+      if (menu === except) return;
+      menu.classList.remove("open");
+      const trigger = menu.closest(".card-menu")?.querySelector(".btn-menu");
+      if (trigger) trigger.setAttribute("aria-expanded", "false");
+    });
+  }
+
   function renderGrid() {
     const dashboards = visibleDashboards();
     const parts = [
-      dashboards.length + " dashboard" + (dashboards.length === 1 ? "" : "s"),
+      dashboards.length + " Dashboard" + (dashboards.length === 1 ? "" : "s"),
     ];
     if (activeTag) parts.push('tagged "' + activeTag + '"');
     if (searchQuery) parts.push('matching "' + searchQuery + '"');
@@ -956,18 +977,25 @@ function initLibraryPage() {
         escapeHtml(d.slug) +
         "</div>" +
         '<div class="card-meta">' +
-        dateLabel +
+        (dateLabel ? '<div class="card-meta-line">' + dateLabel + "</div>" : "") +
         "</div>" +
         renderTagChips(tags, { filterable: true }) +
         '<div class="card-actions">' +
-        '<button type="button" class="btn btn-secondary btn-sm btn-copy">Copy Link</button>' +
+        '<a href="' +
+        d.url +
+        '" target="_blank" rel="noopener" class="btn btn-primary btn-sm btn-open">Open</a>' +
         '<button type="button" class="btn btn-secondary btn-sm btn-edit">Edit</button>' +
-        '<button type="button" class="btn btn-secondary btn-sm btn-replace">Upload New Version</button>' +
+        '<div class="card-menu">' +
+        '<button type="button" class="btn btn-ghost btn-sm btn-menu" aria-haspopup="true" aria-expanded="false" aria-label="More actions">⋯</button>' +
+        '<div class="card-menu-dropdown" role="menu">' +
+        '<button type="button" class="card-menu-item btn-copy" role="menuitem">Copy Link</button>' +
         '<a href="/api/dashboards/' +
         d.slug +
-        '/download" class="btn btn-secondary btn-sm">Download</a>' +
-        '<button type="button" class="btn btn-danger btn-sm btn-delete">Delete</button>' +
-        "</div>" +
+        '/download" class="card-menu-item" role="menuitem">Download</a>' +
+        '<button type="button" class="card-menu-item btn-replace" role="menuitem">Upload New Version</button>' +
+        '<hr class="card-menu-divider">' +
+        '<button type="button" class="card-menu-item danger btn-delete" role="menuitem">Delete</button>' +
+        "</div></div></div>" +
         '<div class="edit-panel">' +
         '<label class="field"><span class="field-label">Name</span>' +
         '<input type="text" class="edit-title" maxlength="120" value="' +
@@ -997,6 +1025,8 @@ function initLibraryPage() {
       const slugStatus = card.querySelector(".edit-slug-status");
       const saveEditBtn = card.querySelector(".btn-save-edit");
       const tagsField = card.querySelector(".edit-tags");
+      const menuBtn = card.querySelector(".btn-menu");
+      const menuDropdown = card.querySelector(".card-menu-dropdown");
 
       const cardTagInput = createTagInput(tagsField, {
         onChange: () => updateCardSaveEnabled(),
@@ -1031,7 +1061,20 @@ function initLibraryPage() {
         });
       });
 
+      menuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const willOpen = !menuDropdown.classList.contains("open");
+        closeAllMenus(willOpen ? menuDropdown : null);
+        menuDropdown.classList.toggle("open", willOpen);
+        menuBtn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      });
+
+      menuDropdown.addEventListener("click", (e) => {
+        if (e.target.closest(".card-menu-item")) closeAllMenus();
+      });
+
       card.querySelector(".btn-edit").addEventListener("click", () => {
+        closeAllMenus();
         editPanel.classList.add("active");
         titleField.value = cardTitle;
         slugField.value = cardSlug;
@@ -1067,17 +1110,20 @@ function initLibraryPage() {
         }
       });
 
-      card.querySelector(".btn-copy").addEventListener("click", () =>
-        copyToClipboard(window.location.origin + "/d/" + cardSlug)
-      );
+      card.querySelector(".btn-copy").addEventListener("click", () => {
+        closeAllMenus();
+        copyToClipboard(window.location.origin + "/d/" + cardSlug);
+      });
 
       card.querySelector(".btn-replace").addEventListener("click", () => {
+        closeAllMenus();
         replaceSlug = d.slug;
         replaceInput.value = "";
         replaceInput.click();
       });
 
       card.querySelector(".btn-delete").addEventListener("click", async () => {
+        closeAllMenus();
         if (!confirm('Delete "' + d.title + '"? This cannot be undone.')) return;
         try {
           await deleteDashboard(d.slug);
@@ -1114,7 +1160,32 @@ function initLibraryPage() {
         renderGrid();
       }, 150);
     });
+
+    const searchKbd = document.getElementById("library-search-kbd");
+    const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || "");
+    if (searchKbd) {
+      searchKbd.textContent = isMac ? "⌘K" : "Ctrl K";
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInput.focus();
+        searchInput.select();
+      }
+    });
   }
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".card-menu")) closeAllMenus();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeAllMenus();
+      if (searchInput && document.activeElement === searchInput) searchInput.blur();
+    }
+  });
 
   if (sortSelect) {
     sortSelect.addEventListener("change", () => {

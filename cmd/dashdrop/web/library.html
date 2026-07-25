@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Library — Dashdrop</title>
   <meta name="description" content="Browse all published HTML dashboards.">
-  <link rel="stylesheet" href="/css/style.css?v=10">
+  <link rel="stylesheet" href="/css/style.css?v=12">
 </head>
 <body>
   <header class="site-header">
@@ -24,13 +24,23 @@
         <h1>Dashboard Library</h1>
         <p id="dashboard-count" class="library-count">Loading...</p>
       </div>
-      <a href="/" class="btn btn-primary">Upload new</a>
+      <a href="/" class="btn btn-primary btn-upload">
+        <span class="btn-upload-icon" aria-hidden="true">+</span>
+        Upload Dashboard
+      </a>
     </div>
 
     <div id="library-toolbar" class="library-toolbar" style="display: none" aria-label="Organize library">
       <label class="library-search">
         <span class="visually-hidden">Search dashboards</span>
-        <input id="library-search" type="search" placeholder="Search by name, slug, or tag" autocomplete="off">
+        <span class="library-search-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="5.25" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <input id="library-search" type="search" placeholder="Search dashboards..." autocomplete="off">
+        <kbd id="library-search-kbd" class="library-search-kbd" aria-hidden="true">⌘K</kbd>
       </label>
       <div class="library-toolbar-right">
         <label class="library-sort">
@@ -60,14 +70,29 @@
     <div id="loading" class="loading">Loading dashboards...</div>
 
     <div id="empty-state" class="empty-state" style="display: none">
-      <div class="empty-icon">📂</div>
+      <div class="empty-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+        </svg>
+      </div>
       <h2>No dashboards yet</h2>
-      <p>Upload your first HTML file to get started.</p>
-      <a href="/" class="btn btn-primary">Upload HTML</a>
+      <p>Upload your first HTML dashboard.</p>
+      <a href="/" class="btn btn-primary btn-upload">
+        <span class="btn-upload-icon" aria-hidden="true">+</span>
+        Upload Dashboard
+      </a>
     </div>
 
     <div id="empty-filter" class="empty-state" style="display: none">
-      <div class="empty-icon">🏷️</div>
+      <div class="empty-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7"/>
+          <path d="M20 20l-3-3"/>
+        </svg>
+      </div>
       <h2 id="empty-filter-title">No matching dashboards</h2>
       <p id="empty-filter-text">No dashboards have this tag.</p>
       <button type="button" id="btn-clear-filter" class="btn btn-secondary">Clear filters</button>
@@ -78,6 +103,6 @@
 
   <input id="replace-input" type="file" accept=".html,.htm,text/html" hidden>
   <iframe id="thumb-frame" title="Thumbnail capture frame" sandbox="allow-same-origin allow-scripts"></iframe>
-  <script src="/js/app.js?v=11"></script>
+  <script src="/js/app.js?v=12"></script>
 </body>
 </html>
