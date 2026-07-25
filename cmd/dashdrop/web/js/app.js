@@ -900,6 +900,8 @@ function initLibraryPage() {
     grid.querySelectorAll(".card-menu-dropdown.open").forEach((menu) => {
       if (menu === except) return;
       menu.classList.remove("open");
+      const cardEl = menu.closest(".dashboard-card");
+      if (cardEl) cardEl.classList.remove("is-menu-open");
       const trigger = menu.closest(".card-menu")?.querySelector(".btn-menu");
       if (trigger) trigger.setAttribute("aria-expanded", "false");
     });
@@ -1066,6 +1068,7 @@ function initLibraryPage() {
         const willOpen = !menuDropdown.classList.contains("open");
         closeAllMenus(willOpen ? menuDropdown : null);
         menuDropdown.classList.toggle("open", willOpen);
+        card.classList.toggle("is-menu-open", willOpen);
         menuBtn.setAttribute("aria-expanded", willOpen ? "true" : "false");
       });
 

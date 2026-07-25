@@ -813,7 +813,7 @@ main {
 
 .dashboard-grid.view-list {
   grid-template-columns: 1fr;
-  gap: calc(var(--space) * 2);
+  gap: calc(var(--space) * 1.5);
 }
 
 .dashboard-card {
@@ -827,6 +827,11 @@ main {
   box-shadow: var(--shadow);
   transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
   animation: cardIn 200ms ease both;
+}
+
+.dashboard-card.is-menu-open {
+  z-index: 20; /* float above later grid siblings so overflow menu isn't clipped */
+  position: relative;
 }
 
 .dashboard-card:nth-child(1) { animation-delay: 0ms; }
@@ -850,7 +855,7 @@ main {
 
 .dashboard-grid.view-list .dashboard-card {
   flex-direction: row;
-  align-items: stretch;
+  align-items: center;
   border-radius: var(--radius);
 }
 
@@ -878,11 +883,12 @@ main {
 }
 
 .dashboard-grid.view-list .card-thumb {
-  width: 140px;
-  min-width: 120px;
-  height: auto;
-  aspect-ratio: 4 / 3;
-  border-radius: var(--radius) 0 0 var(--radius);
+  width: 96px;
+  min-width: 96px;
+  height: 72px;
+  aspect-ratio: auto;
+  margin: 12px 0 12px 12px;
+  border-radius: 8px;
 }
 
 .card-thumb img {
@@ -915,9 +921,20 @@ main {
   flex-direction: column;
 }
 
+/* List: content left, actions right — avoid tall sparse rows */
 .dashboard-grid.view-list .card-body {
-  justify-content: center;
-  padding: calc(var(--space) * 2) calc(var(--space) * 2.5);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title actions"
+    "slug actions"
+    "meta actions"
+    "tags actions"
+    "edit edit";
+  column-gap: calc(var(--space) * 2);
+  row-gap: 2px;
+  align-items: center;
+  padding: 12px 16px 12px 14px;
 }
 
 .card-title {
@@ -932,7 +949,9 @@ main {
 }
 
 .dashboard-grid.view-list .card-title {
-  font-size: 1.0625rem;
+  grid-area: title;
+  font-size: 0.975rem;
+  margin-bottom: 0;
 }
 
 .card-meta {
@@ -947,19 +966,26 @@ main {
 }
 
 .dashboard-grid.view-list .card-meta {
-  margin-bottom: calc(var(--space) * 1.25);
+  grid-area: meta;
+  margin-bottom: 0;
+  font-size: 0.78rem;
 }
 
 .card-meta:has(+ .card-tags) {
   margin-bottom: calc(var(--space) * 1.25);
 }
 
+.dashboard-grid.view-list .card-meta:has(+ .card-tags) {
+  margin-bottom: 0;
+}
+
 .dashboard-grid.view-list .card-slug {
   display: block;
+  grid-area: slug;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
-  margin-bottom: 0.35rem;
+  margin-bottom: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -975,6 +1001,11 @@ main {
   flex-wrap: wrap;
   gap: 0.4rem;
   margin: 0 0 calc(var(--space) * 2.25);
+}
+
+.dashboard-grid.view-list .card-tags {
+  grid-area: tags;
+  margin: 2px 0 0;
 }
 
 .tag-chip {
@@ -1101,15 +1132,31 @@ button.tag-chip-btn,
   flex: 0 0 auto;
 }
 
+.dashboard-grid.view-list .card-actions {
+  grid-area: actions;
+  flex-wrap: nowrap;
+  align-self: center;
+  margin-top: 0;
+}
+
 .dashboard-grid.view-list .card-actions .btn {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: auto;
+}
+
+.dashboard-grid.view-list .edit-panel {
+  grid-area: edit;
+  margin-top: calc(var(--space) * 1.5);
 }
 
 /* Overflow menu */
 .card-menu {
   position: relative;
   margin-left: auto;
+}
+
+.dashboard-grid.view-list .card-menu {
+  margin-left: 0;
 }
 
 .btn-menu {
@@ -1379,14 +1426,30 @@ button.tag-chip-btn,
   }
 
   .dashboard-grid.view-list .card-thumb {
-    width: 96px;
-    min-width: 96px;
+    width: 72px;
+    min-width: 72px;
+    height: 56px;
+    margin: 10px 0 10px 10px;
+  }
+
+  .dashboard-grid.view-list .card-body {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "title"
+      "slug"
+      "meta"
+      "tags"
+      "actions"
+      "edit";
+    row-gap: 4px;
   }
 
   .dashboard-grid.view-list .card-actions {
     width: 100%;
+    margin-top: 6px;
   }
 
+  .dashboard-grid.view-list .card-menu,
   .card-menu {
     margin-left: auto;
   }
