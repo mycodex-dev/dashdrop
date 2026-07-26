@@ -265,9 +265,27 @@ func (s *Store) entryFromMeta(meta DashboardMeta) DashboardEntry {
 		ExpiresAt: copyTimePtr(meta.ExpiresAt),
 		CreatedAt: meta.CreatedAt,
 		UpdatedAt: meta.UpdatedAt,
-		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", meta.Slug),
-		URL:       s.publicPathPrefix + "/" + meta.Slug,
+		ThumbURL:  s.thumbURL(meta.Slug),
+		URL:       s.publicURL(meta.Slug),
 	}
+}
+
+func (s *Store) publicURL(slug string) string {
+	return s.publicPathPrefix + "/" + slug
+}
+
+func (s *Store) thumbURL(slug string) string {
+	return fmt.Sprintf("/api/dashboards/%s/thumb.png", slug)
+}
+
+// normalizeEntry refreshes derived URL fields so they match the current
+// public path prefix after config changes.
+func (s *Store) normalizeEntry(e DashboardEntry) DashboardEntry {
+	if e.Slug != "" {
+		e.URL = s.publicURL(e.Slug)
+		e.ThumbURL = s.thumbURL(e.Slug)
+	}
+	return e
 }
 
 func filterByArchived(entries []DashboardEntry, archived bool) []DashboardEntry {
@@ -557,6 +575,9 @@ func (s *Store) readManifest() ([]DashboardEntry, error) {
 	}
 	if err := json.Unmarshal(data, &entries); err != nil {
 		return nil, err
+	}
+	for i := range entries {
+		entries[i] = s.normalizeEntry(entries[i])
 	}
 	return entries, nil
 }
