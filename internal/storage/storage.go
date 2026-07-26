@@ -31,7 +31,7 @@ var ErrArchived = errors.New("dashboard archived")
 var ErrTooLarge = errors.New("file exceeds maximum size")
 
 var reservedSlugs = map[string]bool{
-	"api": true, "library": true, "css": true, "js": true, "d": true,
+	"api": true, "library": true, "css": true, "js": true, "d": true, "drop": true,
 	"admin": true, "health": true, "static": true, "assets": true,
 	"settings": true, "branding": true,
 	"favicon.ico": true, "robots.txt": true,
@@ -109,14 +109,14 @@ func New(dataDir, publicPathPrefix string) (*Store, error) {
 
 	prefix := strings.TrimSpace(publicPathPrefix)
 	if prefix == "" {
-		prefix = "/d"
+		prefix = "/drop"
 	}
 	if !strings.HasPrefix(prefix, "/") {
 		prefix = "/" + prefix
 	}
 	prefix = strings.TrimRight(prefix, "/")
 	if prefix == "" {
-		prefix = "/d"
+		prefix = "/drop"
 	}
 
 	s := &Store{dataDir: dataDir, publicPathPrefix: prefix}

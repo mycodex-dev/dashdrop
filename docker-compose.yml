@@ -10,5 +10,5 @@ services:
       - DATA_DIR=/data
       - MAX_UPLOAD_BYTES=5242880
       - MAX_THUMB_BYTES=1048576
-      - PUBLIC_PATH_PREFIX=/d
+      - PUBLIC_PATH_PREFIX=/drop
     restart: unless-stopped
