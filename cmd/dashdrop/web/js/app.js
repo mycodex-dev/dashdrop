@@ -1,6 +1,7 @@
 /* Shared utilities for Dashdrop */
 
 let maxUploadBytes = 5242880;
+let publicPathPrefix = "/d";
 
 async function loadConfig() {
   try {
@@ -8,10 +9,25 @@ async function loadConfig() {
     if (res.ok) {
       const data = await res.json();
       maxUploadBytes = data.max_upload_bytes || maxUploadBytes;
+      if (typeof data.public_path_prefix === "string" && data.public_path_prefix.startsWith("/")) {
+        publicPathPrefix = data.public_path_prefix.replace(/\/+$/, "") || "/d";
+      }
     }
   } catch (_) {
     /* use default */
   }
+}
+
+function publicPathForSlug(slug) {
+  return publicPathPrefix + "/" + slug;
+}
+
+function publicUrlForSlug(slug) {
+  return window.location.origin + publicPathForSlug(slug);
+}
+
+function publicOriginPrefix() {
+  return window.location.origin + publicPathPrefix + "/";
 }
 
 function formatBytes(bytes) {
@@ -612,10 +628,6 @@ function createTagInput(container, { onChange } = {}) {
   };
 }
 
-function publicUrlForSlug(slug) {
-  return window.location.origin + "/d/" + slug;
-}
-
 function createSlugChecker({ input, statusEl, exceptSlug, onChange }) {
   let timer = null;
   let seq = 0;
@@ -671,7 +683,7 @@ function createSlugChecker({ input, statusEl, exceptSlug, onChange }) {
 }
 
 /* Upload page init */
-function initUploadPage() {
+async function initUploadPage() {
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("file-input");
   const progressWrap = document.getElementById("progress");
@@ -694,7 +706,7 @@ function initUploadPage() {
 
   if (!dropzone) return;
 
-  loadConfig();
+  await loadConfig();
 
   let currentSlug = "";
   let currentTitle = "";
@@ -724,7 +736,7 @@ function initUploadPage() {
     : null;
 
   if (slugPrefix) {
-    slugPrefix.textContent = window.location.origin + "/d/";
+    slugPrefix.textContent = publicOriginPrefix();
   }
 
   function showError(msg) {
@@ -1005,7 +1017,7 @@ function initUploadPage() {
 }
 
 /* Library page init */
-function initLibraryPage() {
+async function initLibraryPage() {
   const grid = document.getElementById("dashboard-grid");
   const emptyState = document.getElementById("empty-state");
   const emptyStateTitle = document.getElementById("empty-state-title");
@@ -1029,7 +1041,7 @@ function initLibraryPage() {
 
   if (!grid) return;
 
-  loadConfig();
+  await loadConfig();
 
   const params = new URLSearchParams(window.location.search);
   const SORT_OPTIONS = ["newest", "oldest", "name-asc", "name-desc"];
@@ -1321,8 +1333,8 @@ function initLibraryPage() {
         '<div class="card-title">' +
         escapeHtml(d.title) +
         "</div>" +
-        '<div class="card-slug">/d/' +
-        escapeHtml(d.slug) +
+        '<div class="card-slug">' +
+        escapeHtml(publicPathForSlug(d.slug)) +
         "</div>" +
         '<div class="card-meta">' +
         metaLines +
@@ -1350,7 +1362,7 @@ function initLibraryPage() {
         '"></label>' +
         '<label class="field"><span class="field-label">URL slug</span>' +
         '<div class="slug-input-row"><span class="slug-prefix">' +
-        escapeHtml(window.location.origin + "/d/") +
+        escapeHtml(publicOriginPrefix()) +
         '</span><input type="text" class="edit-slug" maxlength="48" spellcheck="false" value="' +
         escapeHtml(d.slug) +
         '"></div>' +
@@ -1484,7 +1496,7 @@ function initLibraryPage() {
       if (copyBtn) {
         copyBtn.addEventListener("click", () => {
           closeAllMenus();
-          copyToClipboard(window.location.origin + "/d/" + cardSlug);
+          copyToClipboard(publicUrlForSlug(cardSlug));
         });
       }
 

@@ -34,6 +34,7 @@ Set via environment variables (see [`.env.example`](.env.example)):
 | `MAX_UPLOAD_BYTES` | `5242880` | Max HTML file size (5 MB) |
 | `MAX_THUMB_BYTES` | `1048576` | Max thumbnail size (1 MB) |
 | `BASE_URL` | _(empty)_ | Optional absolute URL for copy-link (e.g. `https://dash.example.com`) |
+| `PUBLIC_PATH_PREFIX` | `/d` | URL path prefix for published dashboards (e.g. `/d`, `/p`, `/view`) |
 | `MAX_UPLOADS_PER_MIN` | `10` | Rate limit per IP |
 
 ## Development
@@ -58,7 +59,7 @@ Data is stored in `./data` by default when running locally.
 | `GET` | `/api/slugs/{slug}` | Check if a slug is available (`?except=` for current slug) |
 | `DELETE` | `/api/dashboards/{slug}` | Delete a dashboard |
 | `GET` | `/api/dashboards/{slug}/download` | Download the HTML file |
-| `GET` | `/d/{slug}` | Serve published HTML (404 if archived) |
+| `GET` | `{PUBLIC_PATH_PREFIX}/{slug}` | Serve published HTML (404 if archived; default `/d/{slug}`) |
 | `GET` | `/api/dashboards/{slug}/thumb.png` | Dashboard thumbnail |
 
 ## Security Notes
