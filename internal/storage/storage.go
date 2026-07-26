@@ -31,7 +31,7 @@ var ErrArchived = errors.New("dashboard archived")
 var ErrTooLarge = errors.New("file exceeds maximum size")
 
 var reservedSlugs = map[string]bool{
-	"api": true, "library": true, "css": true, "js": true, "d": true,
+	"api": true, "library": true, "css": true, "js": true, "d": true, "drop": true,
 	"admin": true, "health": true, "static": true, "assets": true,
 	"settings": true, "branding": true,
 	"favicon.ico": true, "robots.txt": true,
@@ -92,11 +92,12 @@ func (e DashboardEntry) MarshalJSON() ([]byte, error) {
 }
 
 type Store struct {
-	dataDir string
-	mu      sync.Mutex
+	dataDir          string
+	publicPathPrefix string
+	mu               sync.Mutex
 }
 
-func New(dataDir string) (*Store, error) {
+func New(dataDir, publicPathPrefix string) (*Store, error) {
 	dashboardsDir := filepath.Join(dataDir, "dashboards")
 	if err := os.MkdirAll(dashboardsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create dashboards dir: %w", err)
@@ -106,7 +107,19 @@ func New(dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("create branding dir: %w", err)
 	}
 
-	s := &Store{dataDir: dataDir}
+	prefix := strings.TrimSpace(publicPathPrefix)
+	if prefix == "" {
+		prefix = "/d"
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	prefix = strings.TrimRight(prefix, "/")
+	if prefix == "" {
+		prefix = "/d"
+	}
+
+	s := &Store{dataDir: dataDir, publicPathPrefix: prefix}
 	if _, err := os.Stat(s.manifestPath()); os.IsNotExist(err) {
 		if err := s.writeManifest([]DashboardEntry{}); err != nil {
 			return nil, err
@@ -243,7 +256,7 @@ func isExpired(expiresAt *time.Time, now time.Time) bool {
 	return expiresAt != nil && !expiresAt.After(now)
 }
 
-func entryFromMeta(meta DashboardMeta) DashboardEntry {
+func (s *Store) entryFromMeta(meta DashboardMeta) DashboardEntry {
 	return DashboardEntry{
 		Slug:      meta.Slug,
 		Title:     meta.Title,
@@ -253,7 +266,7 @@ func entryFromMeta(meta DashboardMeta) DashboardEntry {
 		CreatedAt: meta.CreatedAt,
 		UpdatedAt: meta.UpdatedAt,
 		ThumbURL:  fmt.Sprintf("/api/dashboards/%s/thumb.png", meta.Slug),
-		URL:       fmt.Sprintf("/d/%s", meta.Slug),
+		URL:       s.publicPathPrefix + "/" + meta.Slug,
 	}
 }
 
@@ -403,7 +416,7 @@ func (s *Store) UpdateMeta(currentSlug, newSlug, title string, tags []string, up
 		return DashboardEntry{}, err
 	}
 
-	entry := entryFromMeta(meta)
+	entry := s.entryFromMeta(meta)
 
 	entries, err := s.readManifest()
 	if err != nil {
@@ -467,7 +480,7 @@ func (s *Store) SetArchived(slug string, archived bool) (DashboardEntry, error) 
 		return DashboardEntry{}, err
 	}
 
-	entry := entryFromMeta(meta)
+	entry := s.entryFromMeta(meta)
 
 	entries, err := s.readManifest()
 	if err != nil {
@@ -513,7 +526,7 @@ func (s *Store) archiveExpiredUnlocked(entries []DashboardEntry) ([]DashboardEnt
 		if err := writeFileAtomic(filepath.Join(s.dashboardDir(e.Slug), "meta.json"), metaData, 0o644); err != nil {
 			return nil, err
 		}
-		entries[i] = entryFromMeta(meta)
+		entries[i] = s.entryFromMeta(meta)
 		changed = true
 	}
 	if changed {
@@ -686,7 +699,7 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 		return DashboardEntry{}, err
 	}
 
-	entry := entryFromMeta(meta)
+	entry := s.entryFromMeta(meta)
 
 	entries, err := s.readManifest()
 	if err != nil {
@@ -762,7 +775,7 @@ func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htm
 		return DashboardEntry{}, err
 	}
 
-	entry := entryFromMeta(meta)
+	entry := s.entryFromMeta(meta)
 
 	entries, err := s.readManifest()
 	if err != nil {
@@ -885,7 +898,7 @@ func (s *Store) AccessibleHTMLPath(slug string) (string, error) {
 		if err := writeFileAtomic(filepath.Join(s.dashboardDir(slug), "meta.json"), metaData, 0o644); err != nil {
 			return "", err
 		}
-		entry := entryFromMeta(meta)
+		entry := s.entryFromMeta(meta)
 		entries, err := s.readManifest()
 		if err != nil {
 			return "", err

@@ -511,7 +511,7 @@ func (h *Handler) HandleServe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slug := strings.TrimPrefix(r.URL.Path, "/d/")
+	slug := r.PathValue("slug")
 	if slug == "" || strings.Contains(slug, "/") {
 		http.NotFound(w, r)
 		return
@@ -537,8 +537,9 @@ func (h *Handler) HandleConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	h.writeJSON(w, http.StatusOK, map[string]int64{
-		"max_upload_bytes": h.cfg.MaxUploadBytes,
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"max_upload_bytes":   h.cfg.MaxUploadBytes,
+		"public_path_prefix": h.cfg.PublicPathPrefix,
 	})
 }
 

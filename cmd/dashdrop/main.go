@@ -19,7 +19,7 @@ var webFS embed.FS
 func main() {
 	cfg := config.Load()
 
-	store, err := storage.New(cfg.DataDir)
+	store, err := storage.New(cfg.DataDir, cfg.PublicPathPrefix)
 	if err != nil {
 		log.Fatalf("storage init: %v", err)
 	}
@@ -54,7 +54,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/dashboards/{slug}", h.HandleDelete)
 	mux.HandleFunc("GET /api/dashboards/{slug}/download", h.HandleDownload)
 	mux.HandleFunc("GET /api/dashboards/{slug}/thumb.png", h.HandleThumb)
-	mux.HandleFunc("GET /d/{slug}", h.HandleServe)
+	mux.HandleFunc(cfg.ServePattern(), h.HandleServe)
 	mux.HandleFunc("GET /library", h.ServePage("library.html"))
 	mux.HandleFunc("GET /settings", h.ServePage("settings.html"))
 	mux.HandleFunc("GET /css/{file}", h.ServeStatic)
@@ -62,7 +62,7 @@ func main() {
 	mux.HandleFunc("GET /", h.ServePage("index.html"))
 
 	addr := ":" + cfg.Port
-	log.Printf("dashdrop listening on %s (data: %s)", addr, cfg.DataDir)
+	log.Printf("dashdrop listening on %s (data: %s, public: %s/{slug})", addr, cfg.DataDir, cfg.PublicPathPrefix)
 	if err := http.ListenAndServe(addr, middleware.Logger(mux)); err != nil {
 		log.Fatal(err)
 	}
