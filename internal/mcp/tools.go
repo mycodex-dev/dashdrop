@@ -1,8 +1,6 @@
 package mcp
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +16,7 @@ func toolDefinitions() []toolDef {
 	return []toolDef{
 		{
 			Name:        "upload_dashboard",
-			Description: "Upload a single-file HTML dashboard and publish it to a live URL. A placeholder thumbnail is generated when thumb_base64 is omitted.",
+			Description: "Upload a single-file HTML dashboard and publish it to a live URL. The server generates a thumbnail automatically.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -47,17 +45,13 @@ func toolDefinitions() []toolDef {
 						"type":        "string",
 						"description": "Optional expiration as YYYY-MM-DD or RFC3339",
 					},
-					"thumb_base64": map[string]any{
-						"type":        "string",
-						"description": "Optional PNG thumbnail as raw or data-URL base64",
-					},
 				},
 				"required": []string{"html"},
 			},
 		},
 		{
 			Name:        "replace_dashboard",
-			Description: "Replace an existing dashboard's HTML (and optional thumbnail) while preserving tags/archive/expiry unless updated afterward.",
+			Description: "Replace an existing dashboard's HTML while preserving tags/archive/expiry unless updated afterward. The server regenerates the thumbnail.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -85,10 +79,6 @@ func toolDefinitions() []toolDef {
 					"expires_at": map[string]any{
 						"type":        "string",
 						"description": "Optional expiration as YYYY-MM-DD or RFC3339; empty string clears",
-					},
-					"thumb_base64": map[string]any{
-						"type":        "string",
-						"description": "Optional PNG thumbnail as raw or data-URL base64",
 					},
 				},
 				"required": []string{"slug", "html"},
@@ -222,12 +212,7 @@ func (s *Server) uploadDashboard(r *http.Request, args map[string]any) toolResul
 		return errorResult("filename must end with .html or .htm")
 	}
 
-	thumb, err := s.decodeThumb(args)
-	if err != nil {
-		return errorResult(err.Error())
-	}
-
-	entry, err := s.store.SaveUpload(filename, strings.NewReader(html), int64(len(html)), bytes.NewReader(thumb), s.cfg.MaxUploadBytes, s.cfg.MaxThumbBytes)
+	entry, err := s.store.SaveUpload(filename, strings.NewReader(html), int64(len(html)), nil, s.cfg.MaxUploadBytes, s.cfg.MaxThumbBytes)
 	if err != nil {
 		if errors.Is(err, storage.ErrTooLarge) {
 			return errorResult("file exceeds maximum size")
@@ -264,12 +249,7 @@ func (s *Server) replaceDashboard(r *http.Request, args map[string]any) toolResu
 		return errorResult("filename must end with .html or .htm")
 	}
 
-	thumb, err := s.decodeThumb(args)
-	if err != nil {
-		return errorResult(err.Error())
-	}
-
-	entry, err := s.store.ReplaceUpload(storage.NormalizeSlug(slug), filename, strings.NewReader(html), int64(len(html)), bytes.NewReader(thumb), s.cfg.MaxUploadBytes, s.cfg.MaxThumbBytes)
+	entry, err := s.store.ReplaceUpload(storage.NormalizeSlug(slug), filename, strings.NewReader(html), int64(len(html)), nil, s.cfg.MaxUploadBytes, s.cfg.MaxThumbBytes)
 	if err != nil {
 		switch {
 		case errors.Is(err, storage.ErrNotFound):
@@ -482,31 +462,6 @@ func (s *Server) applyOptionalMeta(slug string, args map[string]any, forUpload b
 		return storage.DashboardEntry{}, errors.New(mapStorageErr(err))
 	}
 	return entry, nil
-}
-
-func (s *Server) decodeThumb(args map[string]any) ([]byte, error) {
-	raw := optionalString(args, "thumb_base64")
-	if raw == "" {
-		return placeholderThumbPNG(), nil
-	}
-	raw = strings.TrimSpace(raw)
-	if i := strings.Index(raw, ","); i >= 0 && strings.Contains(strings.ToLower(raw[:i]), "base64") {
-		raw = raw[i+1:]
-	}
-	data, err := base64.StdEncoding.DecodeString(raw)
-	if err != nil {
-		data, err = base64.RawStdEncoding.DecodeString(raw)
-		if err != nil {
-			return nil, fmt.Errorf("invalid thumb_base64")
-		}
-	}
-	if int64(len(data)) > s.cfg.MaxThumbBytes {
-		return nil, fmt.Errorf("thumbnail exceeds maximum size")
-	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("thumbnail is empty")
-	}
-	return data, nil
 }
 
 func (s *Server) dashboardPayload(r *http.Request, entry storage.DashboardEntry) map[string]any {

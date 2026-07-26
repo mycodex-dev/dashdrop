@@ -1628,19 +1628,7 @@ button.tag-chip-btn,
   }
 }
 
-/* Hidden iframe for thumbnail capture */
-#thumb-frame {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 1280px;
-  height: 800px;
-  border: none;
-  opacity: 0;
-  pointer-events: none;
-  clip-path: inset(50%);
-  z-index: -1;
-}
+
 
 .loading {
   text-align: center;

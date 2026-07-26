@@ -286,121 +286,12 @@ function validateHtmlFile(file) {
   return null;
 }
 
-function canvasToBlob(canvas, quality) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error("Failed to create thumbnail"))),
-      "image/png",
-      quality
-    );
-  });
-}
-
-function createFallbackThumbnail(width, height, filename) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-
-  ctx.fillStyle = "#e8edf2";
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.fillStyle = "#0f766e";
-  ctx.fillRect(0, 0, width, 56);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 22px system-ui, sans-serif";
-  const title = filename.replace(/\.html?$/i, "");
-  ctx.fillText(title.length > 40 ? title.slice(0, 37) + "..." : title, 24, 36);
-
-  ctx.fillStyle = "#5a6f82";
-  ctx.font = "15px system-ui, sans-serif";
-  ctx.fillText("Dashboard preview", 24, Math.round(height / 2));
-
-  return canvasToBlob(canvas, 0.85);
-}
-
-async function generateThumbnail(html, filename) {
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-
-  const iframe = document.getElementById("thumb-frame");
-  if (!iframe) throw new Error("Thumbnail frame not found");
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Thumbnail generation timed out"));
-    }, 15000);
-
-    iframe.onload = async () => {
-      try {
-        await new Promise((r) => setTimeout(r, 500));
-
-        const doc = iframe.contentDocument;
-        const body = doc.body;
-        const htmlEl = doc.documentElement;
-
-        const width = Math.min(Math.max(body.scrollWidth, htmlEl.scrollWidth, 800), 1280);
-        const height = Math.min(Math.max(body.scrollHeight, htmlEl.scrollHeight, 600), 800);
-
-        if (typeof html2canvas === "undefined") {
-          clearTimeout(timeout);
-          URL.revokeObjectURL(url);
-          resolve(await createFallbackThumbnail(width, height, filename));
-          return;
-        }
-
-        try {
-          const captured = await html2canvas(body, {
-            width: width,
-            height: height,
-            scale: 1,
-            useCORS: true,
-            allowTaint: true,
-            logging: false,
-            backgroundColor: "#ffffff",
-          });
-          clearTimeout(timeout);
-          URL.revokeObjectURL(url);
-          resolve(await canvasToBlob(captured, 0.85));
-        } catch (captureErr) {
-          console.warn("Thumbnail capture failed, using fallback:", captureErr);
-          clearTimeout(timeout);
-          URL.revokeObjectURL(url);
-          resolve(await createFallbackThumbnail(width, height, filename));
-        }
-      } catch (err) {
-        clearTimeout(timeout);
-        URL.revokeObjectURL(url);
-        try {
-          resolve(await createFallbackThumbnail(1280, 800, filename));
-        } catch {
-          reject(err);
-        }
-      }
-    };
-
-    iframe.onerror = () => {
-      clearTimeout(timeout);
-      URL.revokeObjectURL(url);
-      reject(new Error("Failed to load HTML for thumbnail"));
-    };
-
-    iframe.src = url;
-  });
-}
-
 async function uploadDashboard(htmlFile, onProgress) {
   const html = await htmlFile.text();
-
-  onProgress?.("Generating preview...");
-  const thumbBlob = await generateThumbnail(html, htmlFile.name);
 
   onProgress?.("Uploading...");
   const form = new FormData();
   form.append("html", new Blob([html], { type: "text/html" }), htmlFile.name);
-  form.append("thumb", thumbBlob, "thumb.png");
 
   const res = await fetch("/api/upload", { method: "POST", body: form });
   const data = await res.json();
@@ -413,13 +304,9 @@ async function uploadDashboard(htmlFile, onProgress) {
 async function replaceDashboard(slug, htmlFile, onProgress) {
   const html = await htmlFile.text();
 
-  onProgress?.("Generating preview...");
-  const thumbBlob = await generateThumbnail(html, htmlFile.name);
-
   onProgress?.("Uploading new version...");
   const form = new FormData();
   form.append("html", new Blob([html], { type: "text/html" }), htmlFile.name);
-  form.append("thumb", thumbBlob, "thumb.png");
 
   const res = await fetch("/api/dashboards/" + slug, { method: "PUT", body: form });
   const data = await res.json().catch(() => ({}));

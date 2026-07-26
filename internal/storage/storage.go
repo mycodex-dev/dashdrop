@@ -434,6 +434,12 @@ func (s *Store) UpdateMeta(currentSlug, newSlug, title string, tags []string, up
 		return DashboardEntry{}, err
 	}
 
+	if title != existing.Title {
+		if err := s.writeThumb(dir, title, nil, 0); err != nil {
+			return DashboardEntry{}, err
+		}
+	}
+
 	entry := s.entryFromMeta(meta)
 
 	entries, err := s.readManifest()
@@ -691,19 +697,16 @@ func (s *Store) SaveUpload(originalFilename string, html io.Reader, htmlSize int
 		return DashboardEntry{}, fmt.Errorf("write html: %w", err)
 	}
 
-	thumbPath := filepath.Join(dir, "thumb.png")
-	if err := writeStreamAtomic(thumbPath, thumb, 0o644, maxThumb); err != nil {
+	title := titleFromFilename(originalFilename)
+	if err := s.writeThumb(dir, title, thumb, maxThumb); err != nil {
 		os.RemoveAll(dir)
-		if errors.Is(err, ErrTooLarge) {
-			return DashboardEntry{}, err
-		}
-		return DashboardEntry{}, fmt.Errorf("write thumb: %w", err)
+		return DashboardEntry{}, err
 	}
 
 	now := time.Now().UTC()
 	meta := DashboardMeta{
 		Slug:             slug,
-		Title:            titleFromFilename(originalFilename),
+		Title:            title,
 		Tags:             []string{},
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -762,18 +765,15 @@ func (s *Store) ReplaceUpload(slug, originalFilename string, html io.Reader, htm
 		return DashboardEntry{}, fmt.Errorf("write html: %w", err)
 	}
 
-	thumbPath := filepath.Join(dir, "thumb.png")
-	if err := writeStreamAtomic(thumbPath, thumb, 0o644, maxThumb); err != nil {
-		if errors.Is(err, ErrTooLarge) {
-			return DashboardEntry{}, err
-		}
-		return DashboardEntry{}, fmt.Errorf("write thumb: %w", err)
+	title := titleFromFilename(originalFilename)
+	if err := s.writeThumb(dir, title, thumb, maxThumb); err != nil {
+		return DashboardEntry{}, err
 	}
 
 	now := time.Now().UTC()
 	meta := DashboardMeta{
 		Slug:             slug,
-		Title:            titleFromFilename(originalFilename),
+		Title:            title,
 		Tags:             copyTags(existing.Tags),
 		Archived:         existing.Archived,
 		ExpiresAt:        copyTimePtr(existing.ExpiresAt),
@@ -955,6 +955,31 @@ func (s *Store) ThumbPath(slug string) (string, error) {
 		return "", ErrNotFound
 	}
 	return path, nil
+}
+
+// writeThumb stores a client-provided thumbnail, or generates one from title when thumb is nil.
+func (s *Store) writeThumb(dir, title string, thumb io.Reader, maxThumb int64) error {
+	thumbPath := filepath.Join(dir, "thumb.png")
+	if thumb == nil {
+		data, err := GenerateThumbnail(title)
+		if err != nil {
+			return fmt.Errorf("generate thumb: %w", err)
+		}
+		if maxThumb > 0 && int64(len(data)) > maxThumb {
+			return ErrTooLarge
+		}
+		if err := writeFileAtomic(thumbPath, data, 0o644); err != nil {
+			return fmt.Errorf("write thumb: %w", err)
+		}
+		return nil
+	}
+	if err := writeStreamAtomic(thumbPath, thumb, 0o644, maxThumb); err != nil {
+		if errors.Is(err, ErrTooLarge) {
+			return err
+		}
+		return fmt.Errorf("write thumb: %w", err)
+	}
+	return nil
 }
 
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {

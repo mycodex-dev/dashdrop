@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -44,5 +45,55 @@ func TestReadManifestRefreshesPublicURLs(t *testing.T) {
 	}
 	if got := entries[0].ThumbURL; got != "/api/dashboards/abc123/thumb.png" {
 		t.Fatalf("ThumbURL = %q", got)
+	}
+}
+
+func TestSaveUploadGeneratesThumbnail(t *testing.T) {
+	dir := t.TempDir()
+	store, err := New(dir, "/d")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	html := "<!doctype html><html><body><h1>Hi</h1></body></html>"
+	entry, err := store.SaveUpload("sales-report.html", strings.NewReader(html), int64(len(html)), nil, 1<<20, 1<<20)
+	if err != nil {
+		t.Fatalf("SaveUpload: %v", err)
+	}
+	if entry.Title != "sales-report" {
+		t.Fatalf("title = %q", entry.Title)
+	}
+
+	thumbPath, err := store.ThumbPath(entry.Slug)
+	if err != nil {
+		t.Fatalf("ThumbPath: %v", err)
+	}
+	info, err := os.Stat(thumbPath)
+	if err != nil {
+		t.Fatalf("stat thumb: %v", err)
+	}
+	if info.Size() < 100 {
+		t.Fatalf("thumb too small: %d", info.Size())
+	}
+
+	data, err := os.ReadFile(thumbPath)
+	if err != nil {
+		t.Fatalf("read thumb: %v", err)
+	}
+	if data[0] != 0x89 || string(data[1:4]) != "PNG" {
+		t.Fatal("generated thumb is not a PNG")
+	}
+}
+
+func TestGenerateThumbnail(t *testing.T) {
+	data, err := GenerateThumbnail("Hello Dashboard")
+	if err != nil {
+		t.Fatalf("GenerateThumbnail: %v", err)
+	}
+	if len(data) < 100 {
+		t.Fatalf("png too small: %d", len(data))
+	}
+	if data[0] != 0x89 || string(data[1:4]) != "PNG" {
+		t.Fatal("not a PNG")
 	}
 }

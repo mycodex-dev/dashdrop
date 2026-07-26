@@ -200,13 +200,3 @@ func TestMCPTokenAuth(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec2.Code)
 	}
 }
-
-func TestPlaceholderThumbPNG(t *testing.T) {
-	data := placeholderThumbPNG()
-	if len(data) < 100 {
-		t.Fatalf("png too small: %d", len(data))
-	}
-	if data[0] != 0x89 || string(data[1:4]) != "PNG" {
-		t.Fatal("not a PNG")
-	}
-}

@@ -74,10 +74,17 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer htmlFile.Close()
-	defer thumbFile.Close()
+	if thumbFile != nil {
+		defer thumbFile.Close()
+	}
 	defer cleanupMultipart(r)
 
-	entry, err := h.store.SaveUpload(filename, htmlFile, htmlHeader.Size, thumbFile, h.cfg.MaxUploadBytes, h.cfg.MaxThumbBytes)
+	var thumbReader io.Reader
+	if thumbFile != nil {
+		thumbReader = thumbFile
+	}
+
+	entry, err := h.store.SaveUpload(filename, htmlFile, htmlHeader.Size, thumbReader, h.cfg.MaxUploadBytes, h.cfg.MaxThumbBytes)
 	if err != nil {
 		if errors.Is(err, storage.ErrTooLarge) {
 			h.writeError(w, http.StatusBadRequest, "file exceeds maximum size")
@@ -114,10 +121,17 @@ func (h *Handler) HandleReplace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer htmlFile.Close()
-	defer thumbFile.Close()
+	if thumbFile != nil {
+		defer thumbFile.Close()
+	}
 	defer cleanupMultipart(r)
 
-	entry, err := h.store.ReplaceUpload(slug, filename, htmlFile, htmlHeader.Size, thumbFile, h.cfg.MaxUploadBytes, h.cfg.MaxThumbBytes)
+	var thumbReader io.Reader
+	if thumbFile != nil {
+		thumbReader = thumbFile
+	}
+
+	entry, err := h.store.ReplaceUpload(slug, filename, htmlFile, htmlHeader.Size, thumbReader, h.cfg.MaxUploadBytes, h.cfg.MaxThumbBytes)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			h.writeError(w, http.StatusNotFound, "dashboard not found")
@@ -173,19 +187,10 @@ func (h *Handler) parseUploadForm(w http.ResponseWriter, r *http.Request) (strin
 		return "", nil, nil, nil, false
 	}
 
-	thumbFile, thumbHeader, err := r.FormFile("thumb")
-	if err != nil {
-		htmlFile.Close()
-		cleanupMultipart(r)
-		h.writeError(w, http.StatusBadRequest, "thumbnail is required")
-		return "", nil, nil, nil, false
-	}
-
 	filename := htmlHeader.Filename
 	ext := strings.ToLower(filepath.Ext(filename))
 	if ext != ".html" && ext != ".htm" {
 		htmlFile.Close()
-		thumbFile.Close()
 		cleanupMultipart(r)
 		h.writeError(w, http.StatusBadRequest, "only .html files are allowed")
 		return "", nil, nil, nil, false
@@ -193,17 +198,8 @@ func (h *Handler) parseUploadForm(w http.ResponseWriter, r *http.Request) (strin
 
 	if htmlHeader.Size < 0 || htmlHeader.Size > h.cfg.MaxUploadBytes {
 		htmlFile.Close()
-		thumbFile.Close()
 		cleanupMultipart(r)
 		h.writeError(w, http.StatusBadRequest, "file exceeds maximum size")
-		return "", nil, nil, nil, false
-	}
-
-	if thumbHeader.Size < 0 || thumbHeader.Size > h.cfg.MaxThumbBytes {
-		htmlFile.Close()
-		thumbFile.Close()
-		cleanupMultipart(r)
-		h.writeError(w, http.StatusBadRequest, "thumbnail exceeds maximum size")
 		return "", nil, nil, nil, false
 	}
 
@@ -212,11 +208,23 @@ func (h *Handler) parseUploadForm(w http.ResponseWriter, r *http.Request) (strin
 		mediaType, _, _ := mime.ParseMediaType(contentType)
 		if mediaType != "text/html" && mediaType != "application/octet-stream" {
 			htmlFile.Close()
-			thumbFile.Close()
 			cleanupMultipart(r)
 			h.writeError(w, http.StatusBadRequest, "invalid content type")
 			return "", nil, nil, nil, false
 		}
+	}
+
+	// Thumbnail is optional — the server generates one when omitted.
+	thumbFile, thumbHeader, err := r.FormFile("thumb")
+	if err != nil {
+		return filename, htmlFile, htmlHeader, nil, true
+	}
+	if thumbHeader.Size < 0 || thumbHeader.Size > h.cfg.MaxThumbBytes {
+		htmlFile.Close()
+		thumbFile.Close()
+		cleanupMultipart(r)
+		h.writeError(w, http.StatusBadRequest, "thumbnail exceeds maximum size")
+		return "", nil, nil, nil, false
 	}
 
 	return filename, htmlFile, htmlHeader, thumbFile, true
