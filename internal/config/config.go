@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const DefaultPublicPathPrefix = "/drop"
+const DefaultPublicPathPrefix = "/d"
 
 var publicPathPrefixRe = regexp.MustCompile(`(?i)^/[a-z0-9]([a-z0-9_-]*[a-z0-9])?(/[a-z0-9]([a-z0-9_-]*[a-z0-9])?)*$`)
 
@@ -88,7 +88,7 @@ func Load() Config {
 }
 
 // NormalizePublicPathPrefix cleans and validates a public path prefix.
-// Invalid or empty values fall back to DefaultPublicPathPrefix ("/drop").
+// Invalid or empty values fall back to DefaultPublicPathPrefix ("/d").
 func NormalizePublicPathPrefix(raw string) string {
 	prefix := strings.TrimSpace(raw)
 	if prefix == "" {

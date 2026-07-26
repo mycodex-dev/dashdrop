@@ -1,7 +1,7 @@
 /* Shared utilities for Dashdrop */
 
 let maxUploadBytes = 5242880;
-let publicPathPrefix = "/drop";
+let publicPathPrefix = "/d";
 
 async function loadConfig() {
   try {
@@ -10,7 +10,7 @@ async function loadConfig() {
       const data = await res.json();
       maxUploadBytes = data.max_upload_bytes || maxUploadBytes;
       if (typeof data.public_path_prefix === "string" && data.public_path_prefix.startsWith("/")) {
-        publicPathPrefix = data.public_path_prefix.replace(/\/+$/, "") || "/drop";
+        publicPathPrefix = data.public_path_prefix.replace(/\/+$/, "") || "/d";
       }
     }
   } catch (_) {

@@ -109,14 +109,14 @@ func New(dataDir, publicPathPrefix string) (*Store, error) {
 
 	prefix := strings.TrimSpace(publicPathPrefix)
 	if prefix == "" {
-		prefix = "/drop"
+		prefix = "/d"
 	}
 	if !strings.HasPrefix(prefix, "/") {
 		prefix = "/" + prefix
 	}
 	prefix = strings.TrimRight(prefix, "/")
 	if prefix == "" {
-		prefix = "/drop"
+		prefix = "/d"
 	}
 
 	s := &Store{dataDir: dataDir, publicPathPrefix: prefix}
