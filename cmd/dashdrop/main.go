@@ -9,6 +9,7 @@ import (
 
 	"github.com/mycodex-dev/dashdrop/internal/config"
 	"github.com/mycodex-dev/dashdrop/internal/handlers"
+	"github.com/mycodex-dev/dashdrop/internal/mcp"
 	"github.com/mycodex-dev/dashdrop/internal/middleware"
 	"github.com/mycodex-dev/dashdrop/internal/storage"
 )
@@ -59,10 +60,23 @@ func main() {
 	mux.HandleFunc("GET /settings", h.ServePage("settings.html"))
 	mux.HandleFunc("GET /css/{file}", h.ServeStatic)
 	mux.HandleFunc("GET /js/{file}", h.ServeStatic)
+
+	if cfg.MCPEnabled {
+		mcpHandler := mcp.New(store, cfg).Handler()
+		mux.Handle("GET /mcp", mcpHandler)
+		mux.Handle("POST /mcp", mcpHandler)
+		mux.Handle("DELETE /mcp", mcpHandler)
+		mux.Handle("OPTIONS /mcp", mcpHandler)
+	}
+
 	mux.HandleFunc("GET /", h.ServePage("index.html"))
 
 	addr := ":" + cfg.Port
-	log.Printf("dashdrop listening on %s (data: %s, public: %s/{slug})", addr, cfg.DataDir, cfg.PublicPathPrefix)
+	if cfg.MCPEnabled {
+		log.Printf("dashdrop listening on %s (data: %s, public: %s/{slug}, mcp: /mcp)", addr, cfg.DataDir, cfg.PublicPathPrefix)
+	} else {
+		log.Printf("dashdrop listening on %s (data: %s, public: %s/{slug})", addr, cfg.DataDir, cfg.PublicPathPrefix)
+	}
 	if err := http.ListenAndServe(addr, middleware.Logger(mux)); err != nil {
 		log.Fatal(err)
 	}

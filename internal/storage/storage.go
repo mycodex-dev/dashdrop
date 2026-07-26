@@ -33,7 +33,7 @@ var ErrTooLarge = errors.New("file exceeds maximum size")
 var reservedSlugs = map[string]bool{
 	"api": true, "library": true, "css": true, "js": true, "d": true, "drop": true,
 	"admin": true, "health": true, "static": true, "assets": true,
-	"settings": true, "branding": true,
+	"settings": true, "branding": true, "mcp": true,
 	"favicon.ico": true, "robots.txt": true,
 }
 

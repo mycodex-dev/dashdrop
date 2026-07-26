@@ -21,6 +21,7 @@ Open [http://localhost:8080](http://localhost:8080), drag-and-drop an HTML file,
 - **Static by design** — no build step, no SSR, no runtime transforms
 - **Visual library** — browse all dashboards with auto-generated thumbnails
 - **Tags** — organize dashboards with tags and filter the library
+- **MCP server** — other AI agents can upload and manage dashboards via `/mcp`
 - **Local first** — filesystem storage, Docker Compose, one container
 
 ## Configuration
@@ -36,6 +37,55 @@ Set via environment variables (see [`.env.example`](.env.example)):
 | `BASE_URL` | _(empty)_ | Optional absolute URL for copy-link (e.g. `https://dash.example.com`) |
 | `PUBLIC_PATH_PREFIX` | `/d` | URL path prefix for published dashboards (e.g. `/d`, `/drop`, `/view`) |
 | `MAX_UPLOADS_PER_MIN` | `10` | Rate limit per IP |
+| `MCP_ENABLED` | `true` | Expose the Streamable HTTP MCP endpoint at `/mcp` |
+| `MCP_TOKEN` | _(empty)_ | Optional bearer token required for MCP requests |
+
+## MCP Server
+
+Dashdrop exposes a [Model Context Protocol](https://modelcontextprotocol.io) endpoint so other AI agents can publish and manage dashboards.
+
+- **URL:** `http://<host>:<port>/mcp` (Streamable HTTP)
+- **Auth:** optional `Authorization: Bearer <MCP_TOKEN>` when `MCP_TOKEN` is set
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `upload_dashboard` | Publish HTML (`html` required; optional `filename`, `title`, `slug`, `tags`, `expires_at`, `thumb_base64`) |
+| `replace_dashboard` | Replace an existing dashboard's HTML |
+| `list_dashboards` | List active dashboards (`tag`, `archived` filters) |
+| `get_dashboard` | Fetch metadata (and optional HTML) by slug |
+| `update_dashboard` | Update title, slug, tags, archive state, or expiry |
+| `delete_dashboard` | Permanently delete a dashboard |
+
+When `thumb_base64` is omitted, Dashdrop generates a placeholder PNG thumbnail so agents can upload without a browser capture step.
+
+### Example agent config
+
+```json
+{
+  "mcpServers": {
+    "dashdrop": {
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+With a token:
+
+```json
+{
+  "mcpServers": {
+    "dashdrop": {
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer your-token"
+      }
+    }
+  }
+}
+```
 
 ## Development
 
@@ -61,6 +111,7 @@ Data is stored in `./data` by default when running locally.
 | `GET` | `/api/dashboards/{slug}/download` | Download the HTML file |
 | `GET` | `{PUBLIC_PATH_PREFIX}/{slug}` | Serve published HTML (404 if archived; default `/d/{slug}`) |
 | `GET` | `/api/dashboards/{slug}/thumb.png` | Dashboard thumbnail |
+| `POST`/`GET`/`DELETE` | `/mcp` | MCP Streamable HTTP endpoint for agent uploads |
 
 ## Security Notes
 
@@ -69,6 +120,7 @@ Dashdrop is **fully open** by design — anyone who can reach the instance can u
 - Uploaded HTML runs with full browser privileges when visited
 - Place behind a reverse proxy with TLS for production exposure
 - Rate limiting is enabled by default (10 uploads/min/IP)
+- Set `MCP_TOKEN` if the MCP endpoint should require a bearer token
 
 ## Data Layout
 

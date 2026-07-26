@@ -11,4 +11,6 @@ services:
       - MAX_UPLOAD_BYTES=5242880
       - MAX_THUMB_BYTES=1048576
       - PUBLIC_PATH_PREFIX=/d
+      - MCP_ENABLED=true
+      # - MCP_TOKEN=change-me
     restart: unless-stopped

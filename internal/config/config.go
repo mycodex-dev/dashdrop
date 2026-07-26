@@ -16,6 +16,7 @@ var reservedPublicPrefixes = map[string]bool{
 	"/api": true, "/library": true, "/settings": true,
 	"/css": true, "/js": true, "/branding": true,
 	"/admin": true, "/health": true, "/static": true, "/assets": true,
+	"/mcp": true,
 }
 
 type Config struct {
@@ -26,6 +27,8 @@ type Config struct {
 	BaseURL          string
 	MaxUploadsPerMin int
 	PublicPathPrefix string
+	MCPEnabled       bool
+	MCPToken         string
 }
 
 // MaxUploadRequestBytes is the max multipart body size (HTML + thumb + overhead).
@@ -76,6 +79,11 @@ func Load() Config {
 		dataDir = "./data"
 	}
 
+	mcpEnabled := true
+	if v := os.Getenv("MCP_ENABLED"); v != "" {
+		mcpEnabled = parseBoolEnv(v, true)
+	}
+
 	return Config{
 		Port:             port,
 		DataDir:          dataDir,
@@ -84,6 +92,19 @@ func Load() Config {
 		BaseURL:          os.Getenv("BASE_URL"),
 		MaxUploadsPerMin: maxUploads,
 		PublicPathPrefix: NormalizePublicPathPrefix(os.Getenv("PUBLIC_PATH_PREFIX")),
+		MCPEnabled:       mcpEnabled,
+		MCPToken:         strings.TrimSpace(os.Getenv("MCP_TOKEN")),
+	}
+}
+
+func parseBoolEnv(v string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
 	}
 }
 

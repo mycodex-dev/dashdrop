@@ -20,6 +20,7 @@ func TestNormalizePublicPathPrefix(t *testing.T) {
 		{"/api", "/d"},
 		{"/library", "/d"},
 		{"/settings", "/d"},
+		{"/mcp", "/d"},
 		{"/api/foo", "/d"},
 		{"bad path", "/d"},
 		{"/-bad", "/d"},
