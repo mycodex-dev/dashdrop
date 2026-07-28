@@ -4,6 +4,8 @@ Upload-first static HTML hosting — drop a single `.html` file, get a live link
 
 Inspired by [Tiiny.host](https://tiiny.host) and [Netlify Drop](https://app.netlify.com/drop), scoped to single HTML files with a visual dashboard library.
 
+![Dashdrop landing page](screenshots/landing_page.png)
+
 ## Quick Start
 
 ```bash
