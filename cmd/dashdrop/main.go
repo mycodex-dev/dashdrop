@@ -55,6 +55,7 @@ func main() {
 	mux.HandleFunc("GET /api/dashboards/{slug}/download", h.HandleDownload)
 	mux.HandleFunc("GET /api/dashboards/{slug}/thumb.png", h.HandleThumb)
 	mux.HandleFunc(cfg.ServePattern(), h.HandleServe)
+	mux.HandleFunc("GET /robots.txt", h.HandleRobots)
 	mux.HandleFunc("GET /library", h.ServePage("library.html"))
 	mux.HandleFunc("GET /settings", h.ServePage("settings.html"))
 	mux.HandleFunc("GET /css/{file}", h.ServeStatic)

@@ -63,6 +63,7 @@ Data is stored in `./data` by default when running locally.
 | `GET` | `/api/dashboards/{slug}/download` | Download the HTML file |
 | `GET` | `{PUBLIC_PATH_PREFIX}/{slug}` | Serve published HTML (404 if archived; default `/d/{slug}`) |
 | `GET` | `/api/dashboards/{slug}/thumb.png` | Dashboard thumbnail |
+| `GET` | `/robots.txt` | Disallow published paths and known AI crawlers |
 
 ## Security Notes
 
@@ -71,6 +72,7 @@ Dashdrop is **fully open** by design — anyone who can reach the instance can u
 - Uploaded HTML runs with full browser privileges when visited
 - Place behind a reverse proxy with TLS for production exposure
 - Rate limiting is enabled by default (10 uploads/min/IP)
+- Published dashboards send `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet`, and `/robots.txt` disallows `{PUBLIC_PATH_PREFIX}/`, `/library`, and `/api/` (plus known AI crawlers). This asks well-behaved search/AI bots not to index shared links; it is not access control.
 
 ## Data Layout
 
