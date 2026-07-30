@@ -39,6 +39,15 @@ func TestHandleRobotsDisallowsPublicPrefix(t *testing.T) {
 			t.Errorf("robots.txt missing %q\nbody:\n%s", want, body)
 		}
 	}
+
+	// Specific User-agent groups replace (not inherit) the * group, so each AI
+	// group must disallow discovery endpoints as well as the public prefix.
+	for _, ua := range []string{"GPTBot", "Google-Extended", "ClaudeBot"} {
+		group := "User-agent: " + ua + "\nDisallow: /drop/\nDisallow: /library\nDisallow: /api/\n"
+		if !strings.Contains(body, group) {
+			t.Errorf("AI group %q missing full Disallow set\nbody:\n%s", ua, body)
+		}
+	}
 }
 
 func TestHandleServeSetsXRobotsTag(t *testing.T) {

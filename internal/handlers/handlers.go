@@ -559,6 +559,17 @@ func (h *Handler) HandleServe(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, htmlPath)
 }
 
+// writeRobotsDisallows appends Disallow rules for published dashboards and
+// discovery surfaces. Specific User-agent groups do not inherit User-agent: *
+// rules, so every group must include the full set.
+func writeRobotsDisallows(b *strings.Builder, prefix string) {
+	b.WriteString("Disallow: ")
+	b.WriteString(prefix)
+	b.WriteString("/\n")
+	b.WriteString("Disallow: /library\n")
+	b.WriteString("Disallow: /api/\n")
+}
+
 // HandleRobots serves robots.txt that blocks crawlers from published dashboards
 // and known AI training bots from those paths.
 func (h *Handler) HandleRobots(w http.ResponseWriter, r *http.Request) {
@@ -571,20 +582,14 @@ func (h *Handler) HandleRobots(w http.ResponseWriter, r *http.Request) {
 	var b strings.Builder
 	b.WriteString("# Dashdrop: published dashboards are not for search/AI indexing\n")
 	b.WriteString("User-agent: *\n")
-	b.WriteString("Disallow: ")
-	b.WriteString(prefix)
-	b.WriteString("/\n")
-	b.WriteString("Disallow: /library\n")
-	b.WriteString("Disallow: /api/\n")
+	writeRobotsDisallows(&b, prefix)
 	b.WriteByte('\n')
 
 	for _, ua := range aiCrawlerUserAgents {
 		b.WriteString("User-agent: ")
 		b.WriteString(ua)
 		b.WriteByte('\n')
-		b.WriteString("Disallow: ")
-		b.WriteString(prefix)
-		b.WriteString("/\n")
+		writeRobotsDisallows(&b, prefix)
 		b.WriteByte('\n')
 	}
 
