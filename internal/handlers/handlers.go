@@ -39,6 +39,30 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+// robotsTagNoIndex asks search engines and well-behaved crawlers not to index
+// or archive the response. Uploaded HTML is served as-is, so headers (not meta
+// tags) are the reliable signal.
+const robotsTagNoIndex = "noindex, nofollow, noarchive, nosnippet"
+
+// aiCrawlerUserAgents are known AI / training crawlers that honor robots.txt.
+var aiCrawlerUserAgents = []string{
+	"GPTBot",
+	"Google-Extended",
+	"ClaudeBot",
+	"anthropic-ai",
+	"Bytespider",
+	"CCBot",
+	"FacebookBot",
+	"meta-externalagent",
+	"Applebot-Extended",
+	"PerplexityBot",
+	"Diffbot",
+}
+
+func setNoIndexHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Robots-Tag", robotsTagNoIndex)
+}
+
 func (h *Handler) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -458,6 +482,7 @@ func (h *Handler) HandleDownload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	setNoIndexHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeDownloadName(filename)+`"`)
 	w.Header().Set("Cache-Control", "no-store")
@@ -500,6 +525,7 @@ func (h *Handler) HandleThumb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setNoIndexHeaders(w)
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=60")
 	http.ServeFile(w, r, thumbPath)
@@ -527,9 +553,44 @@ func (h *Handler) HandleServe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setNoIndexHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	http.ServeFile(w, r, htmlPath)
+}
+
+// HandleRobots serves robots.txt that blocks crawlers from published dashboards
+// and known AI training bots from those paths.
+func (h *Handler) HandleRobots(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	prefix := h.cfg.PublicPathPrefix
+	var b strings.Builder
+	b.WriteString("# Dashdrop: published dashboards are not for search/AI indexing\n")
+	b.WriteString("User-agent: *\n")
+	b.WriteString("Disallow: ")
+	b.WriteString(prefix)
+	b.WriteString("/\n")
+	b.WriteString("Disallow: /library\n")
+	b.WriteString("Disallow: /api/\n")
+	b.WriteByte('\n')
+
+	for _, ua := range aiCrawlerUserAgents {
+		b.WriteString("User-agent: ")
+		b.WriteString(ua)
+		b.WriteByte('\n')
+		b.WriteString("Disallow: ")
+		b.WriteString(prefix)
+		b.WriteString("/\n")
+		b.WriteByte('\n')
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Write([]byte(b.String()))
 }
 
 func (h *Handler) HandleConfig(w http.ResponseWriter, r *http.Request) {
